@@ -468,6 +468,45 @@ function App() {
         </div>
       </section>
 
+      <section className="panel objective-spotlight">
+        <div className="section-heading">
+          <div>
+            <p className="mini-label">当前目标</p>
+            <h2>首轮换命闭环</h2>
+          </div>
+          <span className="soft-chip">主线进度</span>
+        </div>
+
+        <div className="goal-list">
+          <div className={`goal-item ${connectedCount >= 4 ? 'done' : ''}`}>
+            <span>{connectedCount >= 4 ? '已达成' : '进行中'}</span>
+            <p>控制至少 4 个连通节点</p>
+          </div>
+          <div
+            className={`goal-item ${
+              state.buildingsByNode.subway?.includes('moonPlatform') ? 'done' : ''
+            }`}
+          >
+            <span>
+              {state.buildingsByNode.subway?.includes('moonPlatform')
+                ? '已达成'
+                : '待建造'}
+            </span>
+            <p>在地铁废口建成月台</p>
+          </div>
+          <div
+            className={`goal-item ${
+              state.lastDawnReport?.stable || state.rebirthReady ? 'done' : ''
+            }`}
+          >
+            <span>
+              {state.lastDawnReport?.stable || state.rebirthReady ? '已达成' : '待结算'}
+            </span>
+            <p>完成一次稳定黎明结算</p>
+          </div>
+        </div>
+      </section>
+
       <main className="layout">
         <aside className="panel left-rail">
           <section className="panel-section">
@@ -534,44 +573,6 @@ function App() {
                   </div>
                 </article>
               ))}
-            </div>
-          </section>
-
-          <section className="panel-section">
-            <div className="section-heading">
-              <div>
-                <p className="mini-label">当前目标</p>
-                <h2>首轮换命闭环</h2>
-              </div>
-            </div>
-
-            <div className="goal-list">
-              <div className={`goal-item ${connectedCount >= 4 ? 'done' : ''}`}>
-                <span>{connectedCount >= 4 ? '已达成' : '进行中'}</span>
-                <p>控制至少 4 个连通节点</p>
-              </div>
-              <div
-                className={`goal-item ${
-                  state.buildingsByNode.subway?.includes('moonPlatform') ? 'done' : ''
-                }`}
-              >
-                <span>
-                  {state.buildingsByNode.subway?.includes('moonPlatform')
-                    ? '已达成'
-                    : '待建造'}
-                </span>
-                <p>在地铁废口建成月台</p>
-              </div>
-              <div
-                className={`goal-item ${
-                  state.lastDawnReport?.stable || state.rebirthReady ? 'done' : ''
-                }`}
-              >
-                <span>
-                  {state.lastDawnReport?.stable || state.rebirthReady ? '已达成' : '待结算'}
-                </span>
-                <p>完成一次稳定黎明结算</p>
-              </div>
             </div>
           </section>
 

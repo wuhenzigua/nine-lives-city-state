@@ -334,6 +334,15 @@ p {
   align-items: start;
 }
 
+.objective-spotlight {
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+.objective-spotlight .goal-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .panel {
   overflow: hidden;
 }
@@ -520,6 +529,12 @@ p {
 .goal-item.done {
   border-color: rgba(45, 122, 110, 0.28);
   background: rgba(45, 122, 110, 0.08);
+}
+
+@media (max-width: 980px) {
+  .objective-spotlight .goal-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .forecast-grid {
