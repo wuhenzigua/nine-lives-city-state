@@ -18,6 +18,7 @@ import {
   getExpansionInfo,
   getNodeById,
   getNodeDisplayYield,
+  getOpeningScavengeInfo,
   getNodeStatus,
   getPerSecondSummary,
   getPreviewDawn,
@@ -83,6 +84,7 @@ function App() {
   const idleCats = state.totalCats - sumAssignments(state.assignments);
   const expansionInfo = getExpansionInfo(state, selectedNode.id);
   const availableBuildings = getAvailableBuildings(state, selectedNode.id);
+  const openingScavenge = getOpeningScavengeInfo(state);
   const phaseInfo = phaseCopy[state.phase];
   const connectedCount = connectedNodeIds.length;
   const currentThreshold = attentionThresholds.find(
@@ -236,6 +238,51 @@ function App() {
                 </article>
               ))}
             </div>
+          </section>
+
+          <section className="panel-section">
+            <div className="section-heading">
+              <div>
+                <p className="mini-label">开局补给</p>
+                <h2>第一天手动翻找</h2>
+              </div>
+              <span className="soft-chip">仅首个白天可用</span>
+            </div>
+
+            {openingScavenge.active ? (
+              <article className="action-card">
+                <div>
+                  <p className="support-copy">
+                    开局残羹储备现在更紧了。第一天白天可以在主巢周边翻找废弃口粮，帮你度过最开始的资源压力。
+                  </p>
+                </div>
+                <div className="chip-row">
+                  <span className="soft-chip">
+                    剩余 {openingScavenge.remainingUses} / {openingScavenge.totalUses} 次
+                  </span>
+                  <span className="soft-chip">
+                    下次 +{openingScavenge.nextScraps} 残羹
+                  </span>
+                  <span className="soft-chip">
+                    注意度 +{openingScavenge.nextAttention}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={openingScavenge.remainingUses === 0}
+                  onClick={() => dispatch({ type: 'openingScavenge' })}
+                >
+                  {openingScavenge.remainingUses > 0
+                    ? `翻找残羹 +${openingScavenge.nextScraps}`
+                    : '附近已经翻空'}
+                </button>
+              </article>
+            ) : (
+              <p className="empty-copy">
+                第一天下午的翻找窗口已经结束。接下来只能靠觅食猫和节点产出稳住残羹。
+              </p>
+            )}
           </section>
 
           <section className="panel-section">

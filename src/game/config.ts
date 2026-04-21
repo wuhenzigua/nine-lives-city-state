@@ -36,12 +36,15 @@ export const emptyResources = (): ResourceMap => ({
 });
 
 export const initialResources: ResourceMap = {
-  scraps: 18,
+  scraps: 8,
   scent: 10,
   trust: 0,
   intel: 0,
   legend: 0,
 };
+
+export const openingScavengeYields = [4, 3, 2, 2, 1] as const;
+export const openingScavengeAttention = [0, 1, 1, 2, 2] as const;
 
 export const jobs: JobConfig[] = [
   {
@@ -49,8 +52,8 @@ export const jobs: JobConfig[] = [
     name: '觅食猫',
     shortName: '觅',
     description: '稳定带回残羹，是维持猫群和建设的基础。',
-    dayYield: { scraps: 0.11 },
-    nightYield: { scraps: 0.17 },
+    dayYield: { scraps: 0.08 },
+    nightYield: { scraps: 0.14 },
   },
   {
     id: 'diplomat',
@@ -134,8 +137,8 @@ export const nodes: NodeConfig[] = [
     name: '主巢',
     summary: '起点与核心仓储。人口、建筑与轮回都围绕它展开。',
     risk: 1,
-    dayYield: { scraps: 0.04, scent: 0.03 },
-    nightYield: { scraps: 0.05, scent: 0.04 },
+    dayYield: { scraps: 0.02, scent: 0.03 },
+    nightYield: { scraps: 0.03, scent: 0.04 },
     neighbors: ['convenience', 'library'],
     tags: ['核心', '人口'],
     position: { x: 12, y: 52 },
@@ -145,8 +148,8 @@ export const nodes: NodeConfig[] = [
     name: '便利店后巷',
     summary: '前期粮仓，残羹稳定，风险适中。',
     risk: 2,
-    dayYield: { scraps: 0.08 },
-    nightYield: { scraps: 0.18 },
+    dayYield: { scraps: 0.06 },
+    nightYield: { scraps: 0.16 },
     neighbors: [MAIN_NEST_ID, 'acBridge', 'garbage'],
     tags: ['残羹', '前期'],
     position: { x: 32, y: 28 },
@@ -178,8 +181,8 @@ export const nodes: NodeConfig[] = [
     name: '垃圾站',
     summary: '夜间高收益节点，也是最容易把注意度拉高的地方。',
     risk: 3,
-    dayYield: { scraps: 0.06 },
-    nightYield: { scraps: 0.28, legend: 0.01 },
+    dayYield: { scraps: 0.04 },
+    nightYield: { scraps: 0.24, legend: 0.01 },
     neighbors: ['convenience', 'acBridge', SUBWAY_ID],
     tags: ['高风险', '高残羹'],
     position: { x: 76, y: 24 },

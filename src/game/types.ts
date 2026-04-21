@@ -100,11 +100,13 @@ export type GameState = {
   cycleCount: number;
   rebirthReady: boolean;
   paused: boolean;
+  openingScavengeClicks: number;
 };
 
 export type Action =
   | { type: 'tick' }
   | { type: 'togglePause' }
+  | { type: 'openingScavenge' }
   | { type: 'selectNode'; nodeId: string }
   | { type: 'assignCat'; jobId: JobKey; delta: 1 | -1 }
   | { type: 'expandNode'; nodeId: string }

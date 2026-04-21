@@ -614,6 +614,16 @@ p {
   font-size: 1rem;
 }
 
+.support-copy {
+  color: var(--ink-soft);
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .selected-metrics {
   flex-direction: column;
   gap: 12px;

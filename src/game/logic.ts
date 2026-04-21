@@ -7,6 +7,8 @@ import {
   initialResources,
   jobs,
   nodes,
+  openingScavengeAttention,
+  openingScavengeYields,
   resourceOrder,
 } from './config';
 import type {
@@ -143,6 +145,9 @@ const pushLog = (
   nextLogId: state.nextLogId + 1,
   logs: [{ id: state.nextLogId, title, detail, tone }, ...state.logs].slice(0, 16),
 });
+
+const isOpeningDay = (state: GameState) =>
+  state.phase === 'day' && state.cycleCount === 0;
 
 const currentObservationNodes = (state: GameState) =>
   Object.entries(state.buildingsByNode)
@@ -683,6 +688,36 @@ const assignCat = (state: GameState, jobId: JobKey, delta: 1 | -1) => {
   };
 };
 
+const openingScavenge = (state: GameState) => {
+  if (!isOpeningDay(state)) {
+    return state;
+  }
+
+  const nextIndex = state.openingScavengeClicks;
+
+  if (nextIndex >= openingScavengeYields.length) {
+    return state;
+  }
+
+  const scrapsGain = openingScavengeYields[nextIndex];
+  const attentionGain = openingScavengeAttention[nextIndex];
+  const remainingUses = openingScavengeYields.length - nextIndex - 1;
+
+  return pushLog(
+    {
+      ...state,
+      openingScavengeClicks: nextIndex + 1,
+      resources: addResources(state.resources, { scraps: scrapsGain }),
+      attention: clamp(state.attention + attentionGain, 0, 100),
+    },
+    '主巢翻找',
+    remainingUses > 0
+      ? `在主巢周边翻出了 ${scrapsGain} 点残羹。还剩 ${remainingUses} 次开局翻找机会。`
+      : `在主巢周边翻出了 ${scrapsGain} 点残羹。附近能捡的第一批口粮已经搜得差不多了。`,
+    attentionGain > 0 ? 'warning' : 'good',
+  );
+};
+
 const tick = (state: GameState) => {
   const delta = getPerSecondResourceDelta(state);
   const nextState = {
@@ -745,6 +780,26 @@ export const getPreviewDawn = (state: GameState) => {
     maintenanceCost,
     floatingNodes,
     patrolChance: clamp(patrolChance, 0, 1),
+  };
+};
+
+export const getOpeningScavengeInfo = (state: GameState) => {
+  const remainingUses = Math.max(
+    0,
+    openingScavengeYields.length - state.openingScavengeClicks,
+  );
+  const active = isOpeningDay(state);
+
+  return {
+    active,
+    remainingUses,
+    totalUses: openingScavengeYields.length,
+    nextScraps: active && remainingUses > 0
+      ? openingScavengeYields[state.openingScavengeClicks]
+      : 0,
+    nextAttention: active && remainingUses > 0
+      ? openingScavengeAttention[state.openingScavengeClicks]
+      : 0,
   };
 };
 
@@ -835,7 +890,7 @@ export const createInitialState = (
       {
         id: 1,
         title: '九命城邦启动',
-        detail: '主巢已经点亮。先稳住白天，再决定今晚是否扩张。',
+        detail: '主巢已经点亮。第一天白天可以手动翻找残羹，先稳住口粮，再决定今晚是否扩张。',
         tone: 'neutral',
       },
     ],
@@ -847,6 +902,7 @@ export const createInitialState = (
     cycleCount: 0,
     rebirthReady: false,
     paused: false,
+    openingScavengeClicks: 0,
   };
 
   return initialState;
@@ -858,6 +914,8 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       return state.paused ? state : tick(state);
     case 'togglePause':
       return { ...state, paused: !state.paused };
+    case 'openingScavenge':
+      return openingScavenge(state);
     case 'selectNode':
       return { ...state, selectedNodeId: action.nodeId };
     case 'assignCat':
