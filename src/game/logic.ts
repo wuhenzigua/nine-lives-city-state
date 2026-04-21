@@ -74,6 +74,9 @@ const applyPassiveHeat = (state: GameState) => {
   return nextHeat;
 };
 
+const hasDestiny = (state: GameState, destiny: GameState['unlockedInstincts'][number]) =>
+  state.unlockedInstincts.includes(destiny);
+
 const applyFrontlineDrift = (state: GameState) => {
   const next = { ...state.frontlinePressure };
   const heatPeak = Math.max(...Object.values(state.nodeHeatById), 0);
@@ -236,7 +239,7 @@ const getTrustMultiplier = (state: GameState) => {
     multiplier *= 0.72;
   }
 
-  if (state.instinct === 'kinship' && state.phase === 'day') {
+  if (hasDestiny(state, 'kinship') && state.phase === 'day') {
     multiplier *= 1.35;
   }
 
@@ -252,7 +255,7 @@ const getPhaseNodeYield = (
   const baseYield = state.phase === 'day' ? node.dayYield : node.nightYield;
   const connectedFactor = connected.has(nodeId) ? 1 : 0.35;
   const riskFactor =
-    state.instinct === 'nightRaid' && state.phase === 'night' && node.risk === 3
+    hasDestiny(state, 'nightRaid') && state.phase === 'night' && node.risk === 3
       ? 1.25
       : 1;
 
@@ -277,7 +280,14 @@ const getPerSecondResourceDelta = (state: GameState) => {
     const assigned = state.assignments[job.id];
     const jobYield = state.phase === 'day' ? job.dayYield : job.nightYield;
 
-    delta = addResources(delta, jobYield, assigned);
+    let yieldMultiplier = 1;
+    if (job.id === 'warden' && hasDestiny(state, 'scentWeaver')) {
+      yieldMultiplier *= 1.2;
+    }
+    if (job.id === 'scout' && hasDestiny(state, 'streetOracle')) {
+      yieldMultiplier *= 1.3;
+    }
+    delta = addResources(delta, jobYield, assigned * yieldMultiplier);
   }
 
   for (const nodeId of state.controlledNodeIds) {
@@ -297,7 +307,7 @@ const getPerSecondAttentionDelta = (state: GameState) => {
     delta -= 8 / PHASE_DURATION_SECONDS;
     delta -= state.assignments.diplomat * 0.048;
 
-    if (state.instinct === 'kinship') {
+    if (hasDestiny(state, 'kinship')) {
       delta -= 0.02;
     }
   } else {
@@ -395,7 +405,10 @@ const resolveDawn = (state: GameState) => {
       0,
     );
   const maintenanceDiscount = controlledNodeIds.includes('acBridge') ? 1 : 0;
-  const maintenanceCost = Math.max(0, baseMaintenance - maintenanceDiscount);
+  const maintenanceCost = Math.max(
+    0,
+    baseMaintenance - maintenanceDiscount - (hasDestiny(state, 'scentWeaver') ? 1 : 0),
+  );
 
   resources.scraps = Math.max(0, resources.scraps - foodCost);
   resources.scent = Math.max(0, resources.scent - maintenanceCost);
@@ -521,15 +534,18 @@ const resolveDawn = (state: GameState) => {
     hasBuilding(nextState, SUBWAY_ID, 'moonPlatform');
 
   if (moonPlatformOnline) {
-    resources.legend += 2;
+    resources.legend += hasDestiny(state, 'moonChaser') ? 4 : 2;
     notes.push('月台与地铁废口共振，额外收集了 2 点传说。');
+  }
+  if (hasDestiny(state, 'moonChaser')) {
+    resources.legend += 1;
   }
 
   const recruitmentChance = clamp(
     0.15 +
       Math.min(resources.trust, 16) * 0.025 +
       connectedAfterDawn.size * 0.04 +
-      (state.instinct === 'kinship' ? 0.08 : 0),
+      (hasDestiny(state, 'kinship') ? 0.08 : 0),
     0.15,
     0.82,
   );
@@ -643,7 +659,7 @@ const expandNode = (state: GameState, nodeId: string) => {
 
   const scentCost =
     state.phase === 'night'
-      ? Math.max(2, 6 - (state.instinct === 'nightRaid' ? 2 : 0))
+      ? Math.max(2, 6 - (hasDestiny(state, 'nightRaid') ? 2 : 0))
       : 10;
   const baseCost = { scent: scentCost };
 
@@ -665,12 +681,15 @@ const expandNode = (state: GameState, nodeId: string) => {
   failureChance -= Math.min(state.resources.intel, 14) * 0.01;
   failureChance -= getAdjacentObservationBonus(state, nodeId);
 
-  if (state.instinct === 'kinship' && state.phase === 'day') {
+  if (hasDestiny(state, 'kinship') && state.phase === 'day') {
     failureChance -= 0.04;
   }
 
-  if (state.instinct === 'nightRaid' && state.phase === 'night') {
+  if (hasDestiny(state, 'nightRaid') && state.phase === 'night') {
     failureChance -= 0.08;
+  }
+  if (hasDestiny(state, 'streetOracle')) {
+    failureChance -= 0.05;
   }
 
   failureChance = clamp(failureChance, 0.08, 0.82);
@@ -772,7 +791,12 @@ const buildStructure = (
     return state;
   }
 
-  if (!canAfford(state.resources, building.cost)) {
+  const actualCost: Partial<ResourceMap> = { ...building.cost };
+  if (hasDestiny(state, 'scrapEngineer') && (actualCost.scraps ?? 0) > 0) {
+    actualCost.scraps = Math.max(1, Math.ceil((actualCost.scraps ?? 0) * 0.8));
+  }
+
+  if (!canAfford(state.resources, actualCost)) {
     return pushLog(
       state,
       '建造失败',
@@ -784,7 +808,7 @@ const buildStructure = (
   const buildingsForNode = [...(state.buildingsByNode[nodeId] ?? []), buildingId];
   const nextState: GameState = {
     ...state,
-    resources: spendResources(state.resources, building.cost),
+    resources: spendResources(state.resources, actualCost),
     buildingsByNode: {
       ...state.buildingsByNode,
       [nodeId]: buildingsForNode,
@@ -809,12 +833,26 @@ const rebirth = (state: GameState, instinct: GameState['instinct']) => {
     return state;
   }
 
-  const next = createInitialState(instinct, state.lives + 1, state.archiveLegend + Math.floor(state.resources.legend));
+  if (state.unlockedInstincts.includes(instinct)) {
+    return pushLog(
+      state,
+      '命途已觉醒',
+      '该命途已是永久增益，请选择新的命途进行下一次轮回。',
+      'warning',
+    );
+  }
+  const nextUnlockedInstincts = [...state.unlockedInstincts, instinct];
+  const next = createInitialState(
+    nextUnlockedInstincts,
+    instinct,
+    state.lives + 1,
+    state.archiveLegend + Math.floor(state.resources.legend),
+  );
 
   return pushLog(
     next,
-    '换命完成',
-    `新的城邦带着 ${instinct === 'kinship' ? '亲人本能' : '夜袭本能'} 醒来。`,
+    '命途觉醒',
+    `已永久觉醒 ${getInstinctName(instinct)}，后续每一命都会继承该增益。`,
     'good',
   );
 };
@@ -871,12 +909,19 @@ const openingScavenge = (state: GameState) => {
 
 const tick = (state: GameState) => {
   const delta = getPerSecondResourceDelta(state);
+  const driftedFrontline = applyFrontlineDrift(state);
   const nextState = {
     ...state,
     resources: addResources(state.resources, delta),
     attention: clamp(state.attention + getPerSecondAttentionDelta(state), 0, 100),
     nodeHeatById: applyPassiveHeat(state),
-    frontlinePressure: applyFrontlineDrift(state),
+    frontlinePressure: hasDestiny(state, 'moonChaser')
+      ? {
+          human: Math.max(0, driftedFrontline.human - 0.04),
+          dogs: Math.max(0, driftedFrontline.dogs - 0.04),
+          rivalCats: Math.max(0, driftedFrontline.rivalCats - 0.04),
+        }
+      : driftedFrontline,
   };
 
   return maybeTogglePhase(nextState);
@@ -1000,7 +1045,9 @@ export const getPreviewDawn = (state: GameState) => {
       .reduce(
         (sum, nodeId) => sum + (hasBuilding(state, nodeId, 'scentMarker') ? 1 : 2),
         0,
-      ) - (state.controlledNodeIds.includes('acBridge') ? 1 : 0),
+      ) -
+      (state.controlledNodeIds.includes('acBridge') ? 1 : 0) -
+      (hasDestiny(state, 'scentWeaver') ? 1 : 0),
   );
   const patrolChance =
     state.attention >= 100 ? 1 : state.attention >= 70 ? 0.35 + (state.attention - 70) * 0.015 : 0;
@@ -1047,7 +1094,7 @@ export const getExpansionInfo = (state: GameState, nodeId: string) => {
   const reachable = node.neighbors.some((neighborId) => connected.has(neighborId));
   const scentCost =
     state.phase === 'night'
-      ? Math.max(2, 6 - (state.instinct === 'nightRaid' ? 2 : 0))
+      ? Math.max(2, 6 - (hasDestiny(state, 'nightRaid') ? 2 : 0))
       : 10;
 
   let failureChance =
@@ -1059,12 +1106,15 @@ export const getExpansionInfo = (state: GameState, nodeId: string) => {
   failureChance -= Math.min(state.resources.intel, 14) * 0.01;
   failureChance -= getAdjacentObservationBonus(state, nodeId);
 
-  if (state.instinct === 'kinship' && state.phase === 'day') {
+  if (hasDestiny(state, 'kinship') && state.phase === 'day') {
     failureChance -= 0.04;
   }
 
-  if (state.instinct === 'nightRaid' && state.phase === 'night') {
+  if (hasDestiny(state, 'nightRaid') && state.phase === 'night') {
     failureChance -= 0.08;
+  }
+  if (hasDestiny(state, 'streetOracle')) {
+    failureChance -= 0.05;
   }
 
   return {
@@ -1083,28 +1133,44 @@ export const getNodeDisplayYield = (state: GameState, nodeId: string) => {
   return getPhaseNodeYield(state, nodeId, connected);
 };
 
+const getInstinctName = (instinct: NonNullable<GameState['instinct']>) => {
+  const names: Record<NonNullable<GameState['instinct']>, string> = {
+    kinship: '亲人本命',
+    nightRaid: '夜袭本命',
+    scentWeaver: '织气本命',
+    streetOracle: '街兆本命',
+    scrapEngineer: '匠巢本命',
+    moonChaser: '逐月本命',
+  };
+  return names[instinct];
+};
+
 export const createInitialState = (
+  unlockedInstincts: GameState['unlockedInstincts'] = [],
   instinct: GameState['instinct'] = null,
   lives = 1,
   archiveLegend = 0,
 ): GameState => {
   const resources = copyResources(initialResources);
 
-  if (instinct === 'kinship') {
+  if (unlockedInstincts.includes('kinship')) {
     resources.trust += 4;
   }
 
-  if (instinct === 'nightRaid') {
+  if (unlockedInstincts.includes('nightRaid')) {
     resources.scent += 3;
+  }
+  if (unlockedInstincts.includes('scrapEngineer')) {
+    resources.scraps += 2;
   }
 
   const initialState: GameState = {
     phase: 'day',
     phaseSecondsRemaining: PHASE_DURATION_SECONDS,
-    attention: instinct === 'kinship' ? 2 : 5,
+    attention: unlockedInstincts.includes('kinship') ? 2 : 5,
     resources,
     totalCats: 3,
-    catCap: 4,
+    catCap: 4 + (unlockedInstincts.includes('scrapEngineer') ? 1 : 0),
     assignments: {
       forager: 2,
       diplomat: 1,
@@ -1127,6 +1193,7 @@ export const createInitialState = (
     nextLogId: 2,
     lastDawnReport: null,
     instinct,
+    unlockedInstincts,
     lives,
     archiveLegend,
     cycleCount: 0,

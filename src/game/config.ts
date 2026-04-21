@@ -119,15 +119,39 @@ export const buildings: BuildingConfig[] = [
 export const instincts: InstinctConfig[] = [
   {
     id: 'kinship',
-    name: '亲人本能',
-    description: '白天更容易获取信任，注意度下降得更快。',
-    modifiers: ['开局额外获得 4 点信任', '白天信任产出 +35%', '白天额外降低注意度'],
+    name: '亲人本命',
+    description: '永久提升白天的社会渗透能力，让城邦更稳。',
+    modifiers: ['永久：白天信任产出 +35%', '永久：白天额外降低注意度', '首次觉醒：开局 +4 信任'],
   },
   {
     id: 'nightRaid',
-    name: '夜袭本能',
-    description: '夜间扩张成本更低，高风险节点在夜间回报更大。',
-    modifiers: ['开局额外获得 3 点气味', '夜间扩张额外减少 2 点气味成本', '高风险节点夜间收益 +25%'],
+    name: '夜袭本命',
+    description: '永久强化夜间扩张窗口，适合高风险抢窗打法。',
+    modifiers: ['永久：夜间扩张成本 -2 气味', '永久：夜间扩张失败率下降', '永久：高风险点夜间收益 +25%'],
+  },
+  {
+    id: 'scentWeaver',
+    name: '织气本命',
+    description: '永久降低网络维护与断链风险，突出治网能力。',
+    modifiers: ['永久：黎明维护额外 -1 气味', '永久：巡界猫产气味 +20%', '永久：网络脆弱度轻微下降'],
+  },
+  {
+    id: 'streetOracle',
+    name: '街兆本命',
+    description: '永久强化情报体系，让高风险行动更可控。',
+    modifiers: ['永久：斥候产情报 +30%', '永久：扩张失败率额外下降', '永久：热点增长略微减缓'],
+  },
+  {
+    id: 'scrapEngineer',
+    name: '匠巢本命',
+    description: '永久强化建设效率，让中期运营更流畅。',
+    modifiers: ['永久：建筑残羹成本 -20%', '永久：猫口上限 +1', '首次觉醒：开局 +2 残羹'],
+  },
+  {
+    id: 'moonChaser',
+    name: '逐月本命',
+    description: '永久强化传说积累和月台联动，为后续轮回提速。',
+    modifiers: ['永久：月台共振额外 +2 传说', '永久：黎明后额外 +1 传说', '永久：前线压力自然回落更快'],
   },
 ];
 

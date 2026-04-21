@@ -10,7 +10,13 @@ export type BuildingKey =
   | 'observationPost'
   | 'moonPlatform';
 
-export type InstinctKey = 'kinship' | 'nightRaid';
+export type InstinctKey =
+  | 'kinship'
+  | 'nightRaid'
+  | 'scentWeaver'
+  | 'streetOracle'
+  | 'scrapEngineer'
+  | 'moonChaser';
 
 export type ResourceMap = Record<ResourceKey, number>;
 
@@ -97,6 +103,7 @@ export type GameState = {
   nextLogId: number;
   lastDawnReport: DawnReport | null;
   instinct: InstinctKey | null;
+  unlockedInstincts: InstinctKey[];
   lives: number;
   archiveLegend: number;
   cycleCount: number;

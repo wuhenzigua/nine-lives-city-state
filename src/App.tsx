@@ -280,8 +280,12 @@ function App() {
               <strong>{state.archiveLegend}</strong>
             </div>
             <div className="status-row">
-              <span>当前本能</span>
-              <strong>{state.instinct ? instincts.find((item) => item.id === state.instinct)?.name : '未继承'}</strong>
+              <span>最近命途</span>
+              <strong>{state.instinct ? instincts.find((item) => item.id === state.instinct)?.name : '未觉醒'}</strong>
+            </div>
+            <div className="status-row">
+              <span>永久命途</span>
+              <strong>{state.unlockedInstincts.length} / {instincts.length}</strong>
             </div>
           </div>
         </div>
@@ -850,14 +854,25 @@ function App() {
             <div className="section-heading">
               <div>
                 <p className="mini-label">换命系统</p>
-                <h2>{state.rebirthReady ? '可以换命' : '尚未解锁'}</h2>
+                <h2>{state.rebirthReady ? '可觉醒永久命途' : '尚未解锁'}</h2>
               </div>
+            </div>
+
+            <div className="chip-row">
+              <span className="soft-chip">
+                已觉醒 {state.unlockedInstincts.length} / {instincts.length}
+              </span>
             </div>
 
             {state.rebirthReady ? (
               <div className="instinct-grid">
                 {instincts.map((instinct) => (
-                  <article key={instinct.id} className="instinct-card ready">
+                  <article
+                    key={instinct.id}
+                    className={`instinct-card ready ${
+                      state.unlockedInstincts.includes(instinct.id) ? 'active' : ''
+                    }`}
+                  >
                     <strong>{instinct.name}</strong>
                     <p>{instinct.description}</p>
                     <ul>
@@ -868,11 +883,14 @@ function App() {
                     <button
                       type="button"
                       className="primary-button"
+                      disabled={state.unlockedInstincts.includes(instinct.id)}
                       onClick={() =>
                         dispatch({ type: 'rebirth', instinct: instinct.id })
                       }
                     >
-                      继承这一本能
+                      {state.unlockedInstincts.includes(instinct.id)
+                        ? '已永久觉醒'
+                        : '永久觉醒该命途'}
                     </button>
                   </article>
                 ))}
@@ -883,7 +901,7 @@ function App() {
                   <article
                     key={instinct.id}
                     className={`instinct-card ${
-                      state.instinct === instinct.id ? 'active' : ''
+                      state.unlockedInstincts.includes(instinct.id) ? 'active' : ''
                     }`}
                   >
                     <strong>{instinct.name}</strong>
