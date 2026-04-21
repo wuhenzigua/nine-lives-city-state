@@ -29,6 +29,7 @@ import {
   getFrontlineSummary,
   getMetaUpgradePanel,
   getMapTierPanel,
+  getEraPanel,
 } from './game/logic';
 import type { ResourceMap } from './game/types';
 
@@ -174,6 +175,7 @@ function App() {
   const frontlineSummary = getFrontlineSummary(state);
   const metaUpgradePanel = getMetaUpgradePanel(state);
   const mapTierPanel = getMapTierPanel(state);
+  const eraPanel = getEraPanel(state);
   const currentThreshold = attentionThresholds.find(
     (threshold) => state.attention <= threshold.max,
   );
@@ -294,6 +296,18 @@ function App() {
             <div className="status-row">
               <span>当前地图</span>
               <strong>{state.currentMapTier} 级</strong>
+            </div>
+            <div className="status-row">
+              <span>文明时代</span>
+              <strong>
+                {eraPanel.era === 'survival'
+                  ? '求生时代'
+                  : eraPanel.era === 'technology'
+                    ? '科技时代'
+                    : eraPanel.era === 'theology'
+                      ? '神学时代'
+                      : '飞升时代'}
+              </strong>
             </div>
           </div>
         </div>
@@ -563,6 +577,62 @@ function App() {
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="panel-section">
+            <div className="section-heading">
+              <div>
+                <p className="mini-label">文明主线</p>
+                <h2>时代推进</h2>
+              </div>
+              <span className="soft-chip">
+                {eraPanel.era === 'survival'
+                  ? '求生'
+                  : eraPanel.era === 'technology'
+                    ? '科技'
+                    : eraPanel.era === 'theology'
+                      ? '神学'
+                      : '飞升'}
+              </span>
+            </div>
+
+            <div className="building-list">
+              {eraPanel.projects.map((project) => (
+                <article key={project.id} className="building-card">
+                  <div>
+                    <strong>{project.name}</strong>
+                    <small>
+                      Lv.{project.level}/{project.maxLevel}
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={
+                      project.lockedByEra ||
+                      project.cost === null ||
+                      state.archiveLegend < (project.cost ?? 0)
+                    }
+                    onClick={() => dispatch({ type: 'buyEraProject', projectId: project.id })}
+                  >
+                    {project.lockedByEra
+                      ? '时代未解锁'
+                      : project.cost === null
+                        ? '已满级'
+                        : `升级 -${project.cost}`}
+                  </button>
+                </article>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="primary-button"
+              disabled={!eraPanel.canAscend}
+              onClick={() => dispatch({ type: 'ascend' })}
+            >
+              {state.ascended ? '已完成猫教飞升' : '启动猫教飞升仪式'}
+            </button>
           </section>
         </aside>
 

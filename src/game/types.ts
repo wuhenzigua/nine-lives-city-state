@@ -70,6 +70,12 @@ export type LogTone = 'neutral' | 'good' | 'warning' | 'danger';
 
 export type FrontlineKey = 'human' | 'dogs' | 'rivalCats';
 export type MetaUpgradeKey = 'deepLarder' | 'scentDoctrine' | 'moonLedger';
+export type EraKey = 'survival' | 'technology' | 'theology' | 'ascension';
+export type EraProjectKey =
+  | 'signalLab'
+  | 'automaton'
+  | 'scriptureHall'
+  | 'moonCathedral';
 
 export type LogEntry = {
   id: number;
@@ -110,6 +116,9 @@ export type GameState = {
   metaUpgradeLevels: Record<MetaUpgradeKey, number>;
   unlockedMapTiers: number[];
   currentMapTier: number;
+  era: EraKey;
+  eraProjectLevels: Record<EraProjectKey, number>;
+  ascended: boolean;
   cycleCount: number;
   rebirthReady: boolean;
   paused: boolean;
@@ -129,4 +138,6 @@ export type Action =
   | { type: 'advancePhase' }
   | { type: 'rebirth'; instinct: InstinctKey }
   | { type: 'buyMetaUpgrade'; upgradeId: MetaUpgradeKey }
-  | { type: 'setMapTier'; tier: number };
+  | { type: 'setMapTier'; tier: number }
+  | { type: 'buyEraProject'; projectId: EraProjectKey }
+  | { type: 'ascend' };

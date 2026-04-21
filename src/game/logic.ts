@@ -15,6 +15,8 @@ import type {
   Action,
   BuildingKey,
   DawnReport,
+  EraKey,
+  EraProjectKey,
   FrontlineKey,
   GameState,
   JobKey,
@@ -55,6 +57,27 @@ const getMetaUpgradeCost = (upgradeId: MetaUpgradeKey, level: number) => {
   return next * 12;
 };
 
+const ERA_PROJECT_MAX_LEVEL = 3;
+const eraProjectLabels: Record<EraProjectKey, string> = {
+  signalLab: '信号实验室',
+  automaton: '自律工坊',
+  scriptureHall: '经义厅',
+  moonCathedral: '月神大教堂',
+};
+const eraProjectCost = (projectId: EraProjectKey, level: number) => {
+  const next = level + 1;
+  if (projectId === 'signalLab') {
+    return next * 14;
+  }
+  if (projectId === 'automaton') {
+    return next * 16;
+  }
+  if (projectId === 'scriptureHall') {
+    return next * 20;
+  }
+  return next * 24;
+};
+
 const copyResources = (resources: ResourceMap): ResourceMap => ({ ...resources });
 
 const getInitialNodeHeat = () =>
@@ -93,6 +116,23 @@ const applyPassiveHeat = (state: GameState) => {
 
 const hasDestiny = (state: GameState, destiny: GameState['unlockedInstincts'][number]) =>
   state.unlockedInstincts.includes(destiny);
+
+const getEra = (state: Pick<GameState, 'archiveLegend' | 'unlockedInstincts' | 'eraProjectLevels' | 'ascended'>): EraKey => {
+  if (state.ascended) {
+    return 'ascension';
+  }
+  if (
+    state.unlockedInstincts.length >= 5 &&
+    state.eraProjectLevels.scriptureHall >= 1 &&
+    state.archiveLegend >= 90
+  ) {
+    return 'theology';
+  }
+  if (state.unlockedInstincts.length >= 3 && state.archiveLegend >= 36) {
+    return 'technology';
+  }
+  return 'survival';
+};
 
 const applyFrontlineDrift = (state: GameState) => {
   const next = { ...state.frontlinePressure };
@@ -313,6 +353,15 @@ const getPerSecondResourceDelta = (state: GameState) => {
     if (job.id === 'scout' && hasDestiny(state, 'streetOracle')) {
       yieldMultiplier *= 1.3;
     }
+    if (job.id === 'scout') {
+      yieldMultiplier *= 1 + state.eraProjectLevels.signalLab * 0.12;
+    }
+    if (job.id === 'forager') {
+      yieldMultiplier *= 1 + state.eraProjectLevels.automaton * 0.1;
+    }
+    if (job.id === 'warden') {
+      yieldMultiplier *= 1 + state.eraProjectLevels.automaton * 0.08;
+    }
     delta = addResources(delta, jobYield, assigned * yieldMultiplier);
   }
 
@@ -336,6 +385,7 @@ const getPerSecondAttentionDelta = (state: GameState) => {
     if (hasDestiny(state, 'kinship')) {
       delta -= 0.02;
     }
+    delta -= state.eraProjectLevels.scriptureHall * 0.01;
   } else {
     delta -= state.assignments.diplomat * 0.012;
     delta += floatingNodes.length * 0.01;
@@ -567,6 +617,9 @@ const resolveDawn = (state: GameState) => {
     resources.legend += 1;
   }
   resources.legend += state.currentMapTier - 1;
+  resources.legend += state.eraProjectLevels.moonCathedral > 0
+    ? state.eraProjectLevels.moonCathedral * 0.8
+    : 0;
 
   const recruitmentChance = clamp(
     0.15 +
@@ -880,6 +933,8 @@ const rebirth = (state: GameState, instinct: GameState['instinct']) => {
     state.metaUpgradeLevels,
     state.unlockedMapTiers,
     state.currentMapTier,
+    state.eraProjectLevels,
+    state.ascended,
   );
 
   return pushLog(
@@ -888,6 +943,58 @@ const rebirth = (state: GameState, instinct: GameState['instinct']) => {
     `已永久觉醒 ${getInstinctName(instinct)}，后续每一命都会继承该增益。`,
     'good',
   );
+};
+
+const buyEraProject = (state: GameState, projectId: EraProjectKey) => {
+  const era = getEra(state);
+  if (projectId === 'scriptureHall' || projectId === 'moonCathedral') {
+    if (era !== 'theology' && era !== 'ascension') {
+      return pushLog(state, '时代未满足', '神学项目需先进入神学时代。', 'warning');
+    }
+  } else if (era === 'survival') {
+    return pushLog(state, '时代未满足', '科技项目需先进入科技时代。', 'warning');
+  }
+
+  const currentLevel = state.eraProjectLevels[projectId];
+  if (currentLevel >= ERA_PROJECT_MAX_LEVEL) {
+    return pushLog(state, '时代项目', '该项目已满级。', 'warning');
+  }
+
+  const cost = eraProjectCost(projectId, currentLevel);
+  if (state.archiveLegend < cost) {
+    return pushLog(state, '传说不足', `升级需要 ${cost} 传说。`, 'warning');
+  }
+
+  const nextState: GameState = {
+    ...state,
+    archiveLegend: state.archiveLegend - cost,
+    eraProjectLevels: {
+      ...state.eraProjectLevels,
+      [projectId]: currentLevel + 1,
+    },
+  };
+  nextState.era = getEra(nextState);
+  return pushLog(nextState, '时代项目升级', `${eraProjectLabels[projectId]} 已提升到 Lv.${currentLevel + 1}。`, 'good');
+};
+
+const ascend = (state: GameState) => {
+  if (state.ascended) {
+    return state;
+  }
+  const canAscend =
+    getEra(state) === 'theology' &&
+    state.eraProjectLevels.scriptureHall >= 3 &&
+    state.eraProjectLevels.moonCathedral >= 2 &&
+    state.archiveLegend >= 180;
+  if (!canAscend) {
+    return pushLog(state, '飞升条件不足', '需要更高神学积累与传说储备。', 'warning');
+  }
+  const nextState: GameState = {
+    ...state,
+    ascended: true,
+    era: 'ascension',
+  };
+  return pushLog(nextState, '猫教飞升', '你已建立猫教并完成飞升，城邦进入永恒纪元。', 'good');
 };
 
 const buyMetaUpgrade = (state: GameState, upgradeId: MetaUpgradeKey) => {
@@ -1136,6 +1243,42 @@ export const getMapTierPanel = (state: GameState) => {
   }));
 };
 
+export const getEraPanel = (state: GameState) => {
+  const era = getEra(state);
+  const allProjects: EraProjectKey[] = [
+    'signalLab',
+    'automaton',
+    'scriptureHall',
+    'moonCathedral',
+  ];
+  const projects = allProjects.map((projectId) => {
+    const level = state.eraProjectLevels[projectId];
+    return {
+      id: projectId,
+      name: eraProjectLabels[projectId],
+      level,
+      maxLevel: ERA_PROJECT_MAX_LEVEL,
+      cost: level >= ERA_PROJECT_MAX_LEVEL ? null : eraProjectCost(projectId, level),
+      lockedByEra:
+        (projectId === 'scriptureHall' || projectId === 'moonCathedral')
+          ? !(era === 'theology' || era === 'ascension')
+          : era === 'survival',
+    };
+  });
+  const canAscend =
+    era === 'theology' &&
+    state.eraProjectLevels.scriptureHall >= 3 &&
+    state.eraProjectLevels.moonCathedral >= 2 &&
+    state.archiveLegend >= 180 &&
+    !state.ascended;
+
+  return {
+    era,
+    projects,
+    canAscend,
+  };
+};
+
 export const unlockMapTierIfAffordable = (state: GameState, tier: number) => {
   if (tier <= 1 || state.unlockedMapTiers.includes(tier)) {
     return state;
@@ -1278,6 +1421,13 @@ export const createInitialState = (
   },
   unlockedMapTiers: number[] = [1],
   currentMapTier = 1,
+  eraProjectLevels: GameState['eraProjectLevels'] = {
+    signalLab: 0,
+    automaton: 0,
+    scriptureHall: 0,
+    moonCathedral: 0,
+  },
+  ascended = false,
 ): GameState => {
   const resources = copyResources(initialResources);
 
@@ -1329,6 +1479,9 @@ export const createInitialState = (
     metaUpgradeLevels,
     unlockedMapTiers,
     currentMapTier,
+    era: getEra({ archiveLegend, unlockedInstincts, eraProjectLevels, ascended }),
+    eraProjectLevels,
+    ascended,
     cycleCount: 0,
     rebirthReady: false,
     paused: false,
@@ -1372,6 +1525,10 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       }
       return unlockMapTierIfAffordable(state, action.tier);
     }
+    case 'buyEraProject':
+      return buyEraProject(state, action.projectId);
+    case 'ascend':
+      return ascend(state);
     default:
       return state;
   }
