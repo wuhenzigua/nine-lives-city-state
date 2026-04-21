@@ -1,4 +1,11 @@
-export type ResourceKey = 'scraps' | 'scent' | 'trust' | 'intel' | 'legend';
+export type ResourceKey =
+  | 'scraps'
+  | 'scent'
+  | 'trust'
+  | 'intel'
+  | 'legend'
+  | 'tech'
+  | 'faith';
 
 export type Phase = 'day' | 'night';
 

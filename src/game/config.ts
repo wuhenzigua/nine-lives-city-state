@@ -17,6 +17,8 @@ export const resourceLabels: Record<ResourceKey, string> = {
   trust: '信任',
   intel: '情报',
   legend: '传说',
+  tech: '机巧',
+  faith: '教义',
 };
 
 export const resourceOrder: ResourceKey[] = [
@@ -25,6 +27,8 @@ export const resourceOrder: ResourceKey[] = [
   'trust',
   'intel',
   'legend',
+  'tech',
+  'faith',
 ];
 
 export const emptyResources = (): ResourceMap => ({
@@ -33,6 +37,8 @@ export const emptyResources = (): ResourceMap => ({
   trust: 0,
   intel: 0,
   legend: 0,
+  tech: 0,
+  faith: 0,
 });
 
 export const initialResources: ResourceMap = {
@@ -41,6 +47,8 @@ export const initialResources: ResourceMap = {
   trust: 0,
   intel: 0,
   legend: 0,
+  tech: 0,
+  faith: 0,
 };
 
 export const openingScavengeYields = [4, 3, 2, 2, 1] as const;
@@ -84,8 +92,8 @@ export const jobs: JobConfig[] = [
     name: '机巧学者',
     shortName: '学',
     description: '科技时代职业。组织实验与记录，让情报与传说产出更稳定。',
-    dayYield: { intel: 0.09, legend: 0.01 },
-    nightYield: { intel: 0.12, legend: 0.02 },
+    dayYield: { intel: 0.09, tech: 0.03, legend: 0.01 },
+    nightYield: { intel: 0.12, tech: 0.04, legend: 0.02 },
     eraUnlock: 'technology',
   },
   {
@@ -93,8 +101,8 @@ export const jobs: JobConfig[] = [
     name: '齿轮匠猫',
     shortName: '匠',
     description: '科技时代职业。偏工程效率，补残羹与气味并提供少量情报。',
-    dayYield: { scraps: 0.08, scent: 0.06 },
-    nightYield: { scraps: 0.12, scent: 0.08, intel: 0.02 },
+    dayYield: { scraps: 0.08, scent: 0.06, tech: 0.02 },
+    nightYield: { scraps: 0.12, scent: 0.08, intel: 0.02, tech: 0.03 },
     eraUnlock: 'technology',
   },
   {
@@ -102,8 +110,8 @@ export const jobs: JobConfig[] = [
     name: '月坛祭司',
     shortName: '祭',
     description: '神学时代职业。稳定传说积累并在白天减缓注意度。',
-    dayYield: { legend: 0.03, trust: 0.05 },
-    nightYield: { legend: 0.06, intel: 0.03 },
+    dayYield: { legend: 0.03, trust: 0.05, faith: 0.03 },
+    nightYield: { legend: 0.06, intel: 0.03, faith: 0.04 },
     eraUnlock: 'theology',
   },
   {
@@ -111,8 +119,8 @@ export const jobs: JobConfig[] = [
     name: '典仪守律',
     shortName: '律',
     description: '神学时代职业。提升秩序与边界稳定，强化信任与气味供给。',
-    dayYield: { trust: 0.08, scent: 0.05 },
-    nightYield: { trust: 0.06, scent: 0.08, legend: 0.02 },
+    dayYield: { trust: 0.08, scent: 0.05, faith: 0.02 },
+    nightYield: { trust: 0.06, scent: 0.08, legend: 0.02, faith: 0.03 },
     eraUnlock: 'theology',
   },
 ];

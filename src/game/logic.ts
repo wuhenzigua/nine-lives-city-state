@@ -321,6 +321,12 @@ const getTrustMultiplier = (state: GameState) => {
   return multiplier;
 };
 
+const isTechnologyEra = (state: GameState) =>
+  state.era === 'technology' || state.era === 'theology' || state.era === 'ascension';
+
+const isTheologyEra = (state: GameState) =>
+  state.era === 'theology' || state.era === 'ascension';
+
 const getPhaseNodeYield = (
   state: GameState,
   nodeId: string,
@@ -371,6 +377,12 @@ const getPerSecondResourceDelta = (state: GameState) => {
     if (job.id === 'warden') {
       yieldMultiplier *= 1 + state.eraProjectLevels.automaton * 0.08;
     }
+    if (isTechnologyEra(state) && (job.id === 'scout' || job.id === 'forager')) {
+      yieldMultiplier *= 1.08;
+    }
+    if (isTheologyEra(state) && (job.id === 'diplomat' || job.id === 'warden')) {
+      yieldMultiplier *= 1.1;
+    }
     delta = addResources(delta, jobYield, assigned * yieldMultiplier);
   }
 
@@ -379,6 +391,12 @@ const getPerSecondResourceDelta = (state: GameState) => {
   }
 
   delta.trust *= getTrustMultiplier(state);
+  if (isTechnologyEra(state)) {
+    delta.tech += Math.max(0, delta.intel) * 0.18 + state.eraProjectLevels.signalLab * 0.01;
+  }
+  if (isTheologyEra(state)) {
+    delta.faith += Math.max(0, delta.trust) * 0.16 + state.eraProjectLevels.scriptureHall * 0.01;
+  }
 
   return delta;
 };
@@ -395,9 +413,15 @@ const getPerSecondAttentionDelta = (state: GameState) => {
       delta -= 0.02;
     }
     delta -= state.eraProjectLevels.scriptureHall * 0.01;
+    if (isTheologyEra(state)) {
+      delta -= 0.015;
+    }
   } else {
     delta -= state.assignments.diplomat * 0.012;
     delta += floatingNodes.length * 0.01;
+    if (isTechnologyEra(state)) {
+      delta -= 0.008;
+    }
   }
 
   return delta;
@@ -535,7 +559,11 @@ const resolveDawn = (state: GameState) => {
   }
 
   const patrolChance =
-    attention >= 100 ? 1 : attention >= 70 ? 0.35 + (attention - 70) * 0.015 : 0;
+    attention >= 100
+      ? 1
+      : attention >= 70
+        ? 0.35 + (attention - 70) * 0.015 - (isTheologyEra(state) ? 0.06 : 0)
+        : 0;
   const patrolTriggered = Math.random() < patrolChance;
 
   if (patrolTriggered) {
@@ -629,6 +657,12 @@ const resolveDawn = (state: GameState) => {
   resources.legend += state.eraProjectLevels.moonCathedral > 0
     ? state.eraProjectLevels.moonCathedral * 0.8
     : 0;
+  if (isTechnologyEra(state)) {
+    resources.legend += resources.tech * 0.015;
+  }
+  if (isTheologyEra(state)) {
+    resources.legend += resources.faith * 0.02;
+  }
 
   const recruitmentChance = clamp(
     0.15 +
@@ -727,6 +761,29 @@ const maybeTogglePhase = (state: GameState) => {
   return transitionPhase(state);
 };
 
+const advancePhaseWithFastForwardBonus = (state: GameState) => {
+  const perSecond = getPerSecondResourceDelta(state);
+  const seconds = Math.max(0, state.phaseSecondsRemaining);
+  const bonusMultiplier = seconds * 0.5;
+  const bonus = emptyResources();
+
+  for (const key of resourceOrder) {
+    bonus[key] = Math.max(0, perSecond[key]) * bonusMultiplier;
+  }
+
+  const nextState = pushLog(
+    {
+      ...state,
+      resources: addResources(state.resources, bonus),
+    },
+    '阶段快进',
+    `已按剩余时长折算并发放本阶段 50% 收益（${seconds} 秒）。`,
+    'neutral',
+  );
+
+  return transitionPhase(nextState);
+};
+
 const expandNode = (state: GameState, nodeId: string) => {
   const node = nodeMap[nodeId];
 
@@ -779,6 +836,12 @@ const expandNode = (state: GameState, nodeId: string) => {
   }
   if (hasDestiny(state, 'streetOracle')) {
     failureChance -= 0.05;
+  }
+  if (isTechnologyEra(state)) {
+    failureChance -= 0.04;
+  }
+  if (isTheologyEra(state)) {
+    failureChance -= 0.02;
   }
 
   failureChance = clamp(failureChance, 0.08, 0.82);
@@ -1321,7 +1384,11 @@ export const getPreviewDawn = (state: GameState) => {
       (hasDestiny(state, 'scentWeaver') ? 1 : 0),
   );
   const patrolChance =
-    state.attention >= 100 ? 1 : state.attention >= 70 ? 0.35 + (state.attention - 70) * 0.015 : 0;
+    state.attention >= 100
+      ? 1
+      : state.attention >= 70
+        ? 0.35 + (state.attention - 70) * 0.015 - (isTheologyEra(state) ? 0.06 : 0)
+        : 0;
 
   return {
     foodCost,
@@ -1397,6 +1464,12 @@ export const getExpansionInfo = (state: GameState, nodeId: string) => {
   }
   if (hasDestiny(state, 'streetOracle')) {
     failureChance -= 0.05;
+  }
+  if (isTechnologyEra(state)) {
+    failureChance -= 0.04;
+  }
+  if (isTheologyEra(state)) {
+    failureChance -= 0.02;
   }
 
   return {
@@ -1536,7 +1609,7 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
     case 'build':
       return buildStructure(state, action.nodeId, action.buildingId);
     case 'advancePhase':
-      return transitionPhase(state);
+      return advancePhaseWithFastForwardBonus(state);
     case 'rebirth':
       return rebirth(state, action.instinct);
     case 'buyMetaUpgrade':
