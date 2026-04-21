@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useReducer } from 'react';
+import { useEffect, useEffectEvent, useReducer, useState } from 'react';
 import './App.css';
 import {
   buildings,
@@ -69,10 +69,74 @@ const describeYield = (yieldMap: Partial<ResourceMap>) => {
 const canAfford = (resources: ResourceMap, cost: Partial<ResourceMap>) =>
   resourceOrder.every((key) => resources[key] >= (cost[key] ?? 0));
 
+const compactText = (value: string, limit = 40) =>
+  value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
+
+const getDecisionHint = ({
+  attention,
+  phase,
+  scraps,
+  previewDawn,
+  expansionInfo,
+  selectedNodeName,
+}: {
+  attention: number;
+  phase: 'day' | 'night';
+  scraps: number;
+  previewDawn: ReturnType<typeof getPreviewDawn>;
+  expansionInfo: ReturnType<typeof getExpansionInfo>;
+  selectedNodeName: string;
+}) => {
+  if (previewDawn.foodCost > scraps) {
+    return {
+      title: '残羹撑不到下一个黎明',
+      detail: '先稳口粮，再谈外扩。优先补残羹而不是继续贪线。',
+    };
+  }
+
+  if (previewDawn.floatingNodes.length > 0) {
+    return {
+      title: '先补回气味链',
+      detail: '已有游离节点。现在继续外扩，结算只会更差。',
+    };
+  }
+
+  if (attention >= 70) {
+    return {
+      title: '城邦过热',
+      detail: '下一次黎明大概率会触发巡查，本轮更适合降温。',
+    };
+  }
+
+  if (
+    phase === 'night' &&
+    expansionInfo?.reachable &&
+    scraps >= 0
+  ) {
+    return {
+      title: `夜间窗口已开`,
+      detail: `${selectedNodeName} 可以尝试进攻，但要先确认失败率是否值得承受。`,
+    };
+  }
+
+  if (phase === 'day') {
+    return {
+      title: '先在白天做准备',
+      detail: '白天优先刷信任、情报和安全边际，别急着硬冲。',
+    };
+  }
+
+  return {
+    title: '网络暂时稳定',
+    detail: '可以为下一次扩张或月台建设继续蓄势。',
+  };
+};
+
 function App() {
   const [state, dispatch] = useReducer(gameReducer, undefined, () =>
     createInitialState(),
   );
+  const [dawnToastCycle, setDawnToastCycle] = useState<number | null>(null);
 
   const selectedNode = getNodeById(state.selectedNodeId);
   const selectedStatus = getNodeStatus(state, selectedNode.id);
@@ -90,6 +154,32 @@ function App() {
   const currentThreshold = attentionThresholds.find(
     (threshold) => state.attention <= threshold.max,
   );
+  const decisionHint = getDecisionHint({
+    attention: state.attention,
+    phase: state.phase,
+    scraps: state.resources.scraps,
+    previewDawn,
+    expansionInfo,
+    selectedNodeName: selectedNode.name,
+  });
+  const tickerEntries =
+    state.logs.length > 0
+      ? state.logs.slice(0, 6).map((log) => ({
+          id: log.id,
+          tone: log.tone,
+          text: `${log.title} · ${compactText(log.detail, 44)}`,
+        }))
+      : [
+          {
+            id: 'quiet-city',
+            tone: 'neutral',
+            text: '城巷暂时平静，继续为下一次夜行蓄势。',
+          },
+        ];
+  const dawnToastVisible =
+    dawnToastCycle === state.cycleCount &&
+    state.cycleCount > 0 &&
+    state.lastDawnReport !== null;
 
   const runTick = useEffectEvent(() => {
     dispatch({ type: 'tick' });
@@ -108,6 +198,24 @@ function App() {
       window.clearInterval(timer);
     };
   }, [state.paused]);
+
+  useEffect(() => {
+    if (!state.lastDawnReport || state.cycleCount === 0) {
+      return undefined;
+    }
+
+    setDawnToastCycle(state.cycleCount);
+
+    const timer = window.setTimeout(() => {
+      setDawnToastCycle((current) =>
+        current === state.cycleCount ? null : current,
+      );
+    }, 3600);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [state.cycleCount, state.lastDawnReport]);
 
   return (
     <div className={`app-shell phase-${state.phase}`}>
@@ -187,6 +295,74 @@ function App() {
         <div className="attention-meter" aria-hidden="true">
           <span style={{ width: `${state.attention}%` }} />
         </div>
+      </section>
+
+      <section className="feedback-ribbon">
+        <div className="feedback-lead">
+          <span className="mini-label">当前判断</span>
+          <strong>{decisionHint.title}</strong>
+          <p>{decisionHint.detail}</p>
+        </div>
+
+        <div className="ticker-shell" aria-label="城市播报">
+          <span className="mini-label">城市播报</span>
+          <div className="ticker-viewport">
+            <div className="ticker-track">
+              <div className="ticker-row">
+                {tickerEntries.map((entry) => (
+                  <span
+                    key={entry.id}
+                    className={`ticker-item tone-${entry.tone}`}
+                  >
+                    {entry.text}
+                  </span>
+                ))}
+              </div>
+              <div className="ticker-row" aria-hidden="true">
+                {tickerEntries.map((entry) => (
+                  <span
+                    key={`${entry.id}-clone`}
+                    className={`ticker-item tone-${entry.tone}`}
+                  >
+                    {entry.text}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="quick-metrics">
+        <article className="metric-card">
+          <span className="mini-label">网络稳定度</span>
+          <strong>{Math.round((connectedCount / state.controlledNodeIds.length) * 100) || 0}%</strong>
+          <p>
+            已连通 {connectedCount} / 已控 {state.controlledNodeIds.length}，连通越高，黎明损耗越低。
+          </p>
+        </article>
+        <article className="metric-card">
+          <span className="mini-label">下一次巡查风险</span>
+          <strong>{Math.round(previewDawn.patrolChance * 100)}%</strong>
+          <p>风险受注意度与节点风险叠加影响，夜晚激进扩张会继续抬升。</p>
+        </article>
+        <article className="metric-card">
+          <span className="mini-label">当前资源焦点</span>
+          <strong>
+            {previewDawn.foodCost > state.resources.scraps
+              ? '残羹短缺'
+              : previewDawn.maintenanceCost > state.resources.scent
+                ? '气味紧张'
+                : '可以扩张'}
+          </strong>
+          <p>
+            {previewDawn.foodCost > state.resources.scraps
+              ? '优先补足残羹，避免黎明直接掉猫。'
+              : previewDawn.maintenanceCost > state.resources.scent
+                ? '先补气味，防止节点游离导致断网。'
+                : '本轮资源可支撑一次稳健外扩。'}
+          </p>
+        </article>
       </section>
 
       <main className="layout">
@@ -423,6 +599,21 @@ function App() {
             })}
           </div>
 
+          <div className="map-legend">
+            <span className="legend-item">
+              <i className="legend-dot connected" />
+              连通节点
+            </span>
+            <span className="legend-item">
+              <i className="legend-dot isolated" />
+              已控但游离
+            </span>
+            <span className="legend-item">
+              <i className="legend-dot wild" />
+              未占领
+            </span>
+          </div>
+
           <div className="selected-panel">
             <div className="selected-copy">
               <div className="selected-header">
@@ -655,69 +846,32 @@ function App() {
         </aside>
       </main>
 
-      <section className="bottom-grid">
-        <article className="panel panel-section">
-          <div className="section-heading">
-            <div>
-              <p className="mini-label">行动日志</p>
-              <h2>最近发生了什么</h2>
-            </div>
-          </div>
-
-          <div className="log-list">
-            {state.logs.map((log) => (
-              <article key={log.id} className={`log-item tone-${log.tone}`}>
-                <div>
-                  <strong>{log.title}</strong>
-                  <p>{log.detail}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </article>
-
-        <article className="panel panel-section">
-          <div className="section-heading">
-            <div>
-              <p className="mini-label">最近一次黎明</p>
-              <h2>结算回顾</h2>
-            </div>
-          </div>
-
-          {state.lastDawnReport ? (
-            <div className="dawn-panel">
-              <div className="forecast-grid">
-                <article className="forecast-card">
-                  <span>残羹消耗</span>
-                  <strong>{state.lastDawnReport.foodCost}</strong>
-                </article>
-                <article className="forecast-card">
-                  <span>气味维护</span>
-                  <strong>{state.lastDawnReport.maintenanceCost}</strong>
-                </article>
-                <article className="forecast-card">
-                  <span>丢失节点</span>
-                  <strong>{state.lastDawnReport.lostNodes.length}</strong>
-                </article>
-                <article className="forecast-card">
-                  <span>是否稳定</span>
-                  <strong>{state.lastDawnReport.stable ? '稳定' : '失衡'}</strong>
-                </article>
-              </div>
-
-              <div className="note-list">
-                {state.lastDawnReport.notes.map((note) => (
-                  <p key={note}>{note}</p>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p className="empty-copy">
-              第一轮黎明还没到来。白天分配好猫口，夜晚再尝试扩张。
-            </p>
-          )}
-        </article>
-      </section>
+      {dawnToastVisible && state.lastDawnReport ? (
+        <aside
+          className={`dawn-toast ${
+            state.lastDawnReport.stable ? 'stable' : 'unstable'
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="mini-label">黎明结算</span>
+          <strong>
+            {state.lastDawnReport.stable ? '网络平稳收束' : '城邦承受了反制'}
+          </strong>
+          <p>
+            残羹 -{state.lastDawnReport.foodCost} · 气味 -
+            {state.lastDawnReport.maintenanceCost}
+            {state.lastDawnReport.lostNodes.length > 0
+              ? ` · 失守 ${state.lastDawnReport.lostNodes.length} 处`
+              : ''}
+            {state.lastDawnReport.recruitedCat ? ' · 新猫加入' : ''}
+          </p>
+          <small>
+            {state.lastDawnReport.notes[0] ??
+              '黎明平静过去，没有发生额外事故。'}
+          </small>
+        </aside>
+      ) : null}
     </div>
   );
 }
