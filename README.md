@@ -40,6 +40,12 @@ npm run lint
 - 每次黎明会消耗残羹与气味；如果注意度过高，可能触发巡查并丢失节点。
 - 控制至少 4 个连通节点，在地铁废口建成月台，并完成一次稳定结算后，就能换命。
 
+## 在线试玩
+
+GitHub Pages 部署完成后，试玩地址为：
+
+`https://wuhenzigua.github.io/nine-lives-city-state/`
+
 ## 项目结构
 
 - `src/App.tsx`：主界面与交互编排

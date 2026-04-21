@@ -1,7 +1,11 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
-// https://vite.dev/config/
-export default defineConfig({
+const repoBase = '/nine-lives-city-state/';
+
+export default defineConfig(({ command }) => ({
+  // GitHub Pages serves the production site under /<repo>/, while local
+  // development should stay at the root path for convenience.
+  base: command === 'build' ? repoBase : '/',
   plugins: [react()],
-})
+}));
