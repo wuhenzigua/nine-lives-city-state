@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useReducer, useState } from 'react';
+import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import './App.css';
 import manualText from './help/manual.md?raw';
 import {
@@ -101,6 +101,17 @@ const canAfford = (resources: ResourceMap, cost: Partial<ResourceMap>) =>
 const compactText = (value: string, limit = 40) =>
   value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
 
+const getVisibleResourceOrder = (era: GameState['era']) =>
+  resourceOrder.filter((key) => {
+    if (key === 'tech') {
+      return era !== 'survival';
+    }
+    if (key === 'faith') {
+      return era === 'theology' || era === 'ascension';
+    }
+    return true;
+  });
+
 const getDecisionHint = ({
   attention,
   phase,
@@ -169,6 +180,7 @@ function App() {
   const [compactJobs, setCompactJobs] = useState(true);
   const [compactRightRail, setCompactRightRail] = useState(true);
   const [manualOpen, setManualOpen] = useState(false);
+  const lastTickAtRef = useRef<number>(Date.now());
 
   const selectedNode = getNodeById(state.selectedNodeId);
   const selectedStatus = getNodeStatus(state, selectedNode.id);
@@ -195,6 +207,7 @@ function App() {
   const mapTierPanel = getMapTierPanel(state);
   const eraPanel = getEraPanel(state);
   const availableJobs = getAvailableJobs(state);
+  const visibleResourceOrder = getVisibleResourceOrder(eraPanel.era);
   const currentThreshold = attentionThresholds.find(
     (threshold) => state.attention <= threshold.max,
   );
@@ -226,7 +239,20 @@ function App() {
     state.lastDawnReport !== null;
 
   const runTick = useEffectEvent(() => {
-    dispatch({ type: 'tick' });
+    const now = Date.now();
+    const elapsedSeconds = Math.floor((now - lastTickAtRef.current) / 1000);
+
+    if (elapsedSeconds <= 0) {
+      return;
+    }
+
+    // 防止离线太久导致一次性补算卡顿，最多补算 10 分钟
+    const catchUpSeconds = Math.min(elapsedSeconds, 600);
+    for (let i = 0; i < catchUpSeconds; i += 1) {
+      dispatch({ type: 'tick' });
+    }
+
+    lastTickAtRef.current = now;
   });
 
   useEffect(() => {
@@ -234,6 +260,7 @@ function App() {
       return undefined;
     }
 
+    lastTickAtRef.current = Date.now();
     const timer = window.setInterval(() => {
       runTick();
     }, 1000);
@@ -358,7 +385,7 @@ function App() {
       </header>
 
       <section className="resource-strip">
-        {resourceOrder.map((resourceKey) => (
+        {visibleResourceOrder.map((resourceKey) => (
           <article key={resourceKey} className="resource-card">
             <div>
               <span className="resource-label">{resourceLabels[resourceKey]}</span>
