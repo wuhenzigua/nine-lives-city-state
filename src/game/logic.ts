@@ -19,6 +19,7 @@ import type {
   GameState,
   JobKey,
   LogEntry,
+  MetaUpgradeKey,
   NodeConfig,
   ResourceMap,
 } from './types';
@@ -37,6 +38,22 @@ const clamp = (value: number, min: number, max: number) =>
 
 const HEAT_MAX = 100;
 const FRONTLINE_MAX = 100;
+const MAX_META_LEVEL = 3;
+const mapTierUnlockCost: Record<number, number> = {
+  2: 24,
+  3: 60,
+};
+
+const getMetaUpgradeCost = (upgradeId: MetaUpgradeKey, level: number) => {
+  const next = level + 1;
+  if (upgradeId === 'deepLarder') {
+    return next * 8;
+  }
+  if (upgradeId === 'scentDoctrine') {
+    return next * 10;
+  }
+  return next * 12;
+};
 
 const copyResources = (resources: ResourceMap): ResourceMap => ({ ...resources });
 
@@ -83,6 +100,11 @@ const applyFrontlineDrift = (state: GameState) => {
   const frontierCount = getFrontierNodeIds(state.controlledNodeIds).length;
   const disconnected = getFloatingNodeIds(state.controlledNodeIds).length;
 
+  const mapPressure = 1 + (state.currentMapTier - 1) * 0.22;
+  const moonLedgerMitigation = hasDestiny(state, 'moonChaser')
+    ? 0.04 + state.metaUpgradeLevels.moonLedger * 0.02
+    : 0;
+
   next.human = clamp(
     next.human + (state.attention >= 65 ? 0.2 : -0.1) + heatPeak * 0.002,
     0,
@@ -98,6 +120,10 @@ const applyFrontlineDrift = (state: GameState) => {
     0,
     FRONTLINE_MAX,
   );
+
+  next.human = clamp(next.human * mapPressure - moonLedgerMitigation, 0, FRONTLINE_MAX);
+  next.dogs = clamp(next.dogs * mapPressure - moonLedgerMitigation, 0, FRONTLINE_MAX);
+  next.rivalCats = clamp(next.rivalCats * mapPressure - moonLedgerMitigation, 0, FRONTLINE_MAX);
 
   return next;
 };
@@ -540,6 +566,7 @@ const resolveDawn = (state: GameState) => {
   if (hasDestiny(state, 'moonChaser')) {
     resources.legend += 1;
   }
+  resources.legend += state.currentMapTier - 1;
 
   const recruitmentChance = clamp(
     0.15 +
@@ -702,7 +729,10 @@ const expandNode = (state: GameState, nodeId: string) => {
   };
 
   const actionAttention =
-    (state.phase === 'day' ? 8 : 0) + (state.phase === 'night' ? 6 : 3) + node.risk * 5;
+    (state.phase === 'day' ? 8 : 0) +
+    (state.phase === 'night' ? 6 : 3) +
+    node.risk * 5 +
+    (state.currentMapTier - 1) * 2;
   const success = Math.random() >= failureChance;
 
   const updatedAttention = clamp(nextState.attention + actionAttention, 0, 100);
@@ -847,6 +877,9 @@ const rebirth = (state: GameState, instinct: GameState['instinct']) => {
     instinct,
     state.lives + 1,
     state.archiveLegend + Math.floor(state.resources.legend),
+    state.metaUpgradeLevels,
+    state.unlockedMapTiers,
+    state.currentMapTier,
   );
 
   return pushLog(
@@ -854,6 +887,45 @@ const rebirth = (state: GameState, instinct: GameState['instinct']) => {
     '命途觉醒',
     `已永久觉醒 ${getInstinctName(instinct)}，后续每一命都会继承该增益。`,
     'good',
+  );
+};
+
+const buyMetaUpgrade = (state: GameState, upgradeId: MetaUpgradeKey) => {
+  const currentLevel = state.metaUpgradeLevels[upgradeId];
+  if (currentLevel >= MAX_META_LEVEL) {
+    return pushLog(state, '局外升级', '该升级已达到最高等级。', 'warning');
+  }
+  const cost = getMetaUpgradeCost(upgradeId, currentLevel);
+  if (state.archiveLegend < cost) {
+    return pushLog(state, '传说不足', `升级需要 ${cost} 传说。`, 'warning');
+  }
+
+  const nextState: GameState = {
+    ...state,
+    archiveLegend: state.archiveLegend - cost,
+    metaUpgradeLevels: {
+      ...state.metaUpgradeLevels,
+      [upgradeId]: currentLevel + 1,
+    },
+  };
+  return pushLog(nextState, '局外升级完成', `消耗 ${cost} 传说，升级已生效。`, 'good');
+};
+
+const setMapTier = (state: GameState, tier: number) => {
+  if (!state.unlockedMapTiers.includes(tier)) {
+    return pushLog(state, '地图未解锁', '先用传说点数解锁该地图层级。', 'warning');
+  }
+  if (state.currentMapTier === tier) {
+    return state;
+  }
+  return pushLog(
+    {
+      ...state,
+      currentMapTier: tier,
+    },
+    '切换地图层级',
+    `已切换到 ${tier} 级地图，下一轮将按新的城市压力运行。`,
+    'neutral',
   );
 };
 
@@ -1035,6 +1107,55 @@ export const getFrontlineSummary = (state: GameState) => {
   };
 };
 
+export const metaUpgradeLabels: Record<MetaUpgradeKey, string> = {
+  deepLarder: '深储粮仓',
+  scentDoctrine: '气味教条',
+  moonLedger: '月帐谱',
+};
+
+export const getMetaUpgradePanel = (state: GameState) => {
+  const upgrades: MetaUpgradeKey[] = ['deepLarder', 'scentDoctrine', 'moonLedger'];
+  return upgrades.map((upgradeId) => {
+    const level = state.metaUpgradeLevels[upgradeId];
+    return {
+      id: upgradeId,
+      name: metaUpgradeLabels[upgradeId],
+      level,
+      maxLevel: MAX_META_LEVEL,
+      cost: level >= MAX_META_LEVEL ? null : getMetaUpgradeCost(upgradeId, level),
+    };
+  });
+};
+
+export const getMapTierPanel = (state: GameState) => {
+  return [1, 2, 3].map((tier) => ({
+    tier,
+    unlocked: state.unlockedMapTiers.includes(tier),
+    active: state.currentMapTier === tier,
+    unlockCost: tier === 1 ? 0 : mapTierUnlockCost[tier],
+  }));
+};
+
+export const unlockMapTierIfAffordable = (state: GameState, tier: number) => {
+  if (tier <= 1 || state.unlockedMapTiers.includes(tier)) {
+    return state;
+  }
+  const cost = mapTierUnlockCost[tier];
+  if (state.archiveLegend < cost) {
+    return pushLog(state, '传说不足', `解锁 ${tier} 级地图需要 ${cost} 传说。`, 'warning');
+  }
+  return pushLog(
+    {
+      ...state,
+      archiveLegend: state.archiveLegend - cost,
+      unlockedMapTiers: [...state.unlockedMapTiers, tier].sort((a, b) => a - b),
+    },
+    '地图解锁',
+    `已解锁 ${tier} 级地图。`,
+    'good',
+  );
+};
+
 export const getPreviewDawn = (state: GameState) => {
   const floatingNodes = getFloatingNodeIds(state.controlledNodeIds);
   const foodCost = state.totalCats * 3;
@@ -1150,6 +1271,13 @@ export const createInitialState = (
   instinct: GameState['instinct'] = null,
   lives = 1,
   archiveLegend = 0,
+  metaUpgradeLevels: GameState['metaUpgradeLevels'] = {
+    deepLarder: 0,
+    scentDoctrine: 0,
+    moonLedger: 0,
+  },
+  unlockedMapTiers: number[] = [1],
+  currentMapTier = 1,
 ): GameState => {
   const resources = copyResources(initialResources);
 
@@ -1163,6 +1291,8 @@ export const createInitialState = (
   if (unlockedInstincts.includes('scrapEngineer')) {
     resources.scraps += 2;
   }
+  resources.scraps += metaUpgradeLevels.deepLarder * 2;
+  resources.scent += metaUpgradeLevels.scentDoctrine * 2;
 
   const initialState: GameState = {
     phase: 'day',
@@ -1196,6 +1326,9 @@ export const createInitialState = (
     unlockedInstincts,
     lives,
     archiveLegend,
+    metaUpgradeLevels,
+    unlockedMapTiers,
+    currentMapTier,
     cycleCount: 0,
     rebirthReady: false,
     paused: false,
@@ -1231,6 +1364,14 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       return transitionPhase(state);
     case 'rebirth':
       return rebirth(state, action.instinct);
+    case 'buyMetaUpgrade':
+      return buyMetaUpgrade(state, action.upgradeId);
+    case 'setMapTier': {
+      if (state.unlockedMapTiers.includes(action.tier)) {
+        return setMapTier(state, action.tier);
+      }
+      return unlockMapTierIfAffordable(state, action.tier);
+    }
     default:
       return state;
   }

@@ -69,6 +69,7 @@ export type InstinctConfig = {
 export type LogTone = 'neutral' | 'good' | 'warning' | 'danger';
 
 export type FrontlineKey = 'human' | 'dogs' | 'rivalCats';
+export type MetaUpgradeKey = 'deepLarder' | 'scentDoctrine' | 'moonLedger';
 
 export type LogEntry = {
   id: number;
@@ -106,6 +107,9 @@ export type GameState = {
   unlockedInstincts: InstinctKey[];
   lives: number;
   archiveLegend: number;
+  metaUpgradeLevels: Record<MetaUpgradeKey, number>;
+  unlockedMapTiers: number[];
+  currentMapTier: number;
   cycleCount: number;
   rebirthReady: boolean;
   paused: boolean;
@@ -123,4 +127,6 @@ export type Action =
   | { type: 'expandNode'; nodeId: string }
   | { type: 'build'; nodeId: string; buildingId: BuildingKey }
   | { type: 'advancePhase' }
-  | { type: 'rebirth'; instinct: InstinctKey };
+  | { type: 'rebirth'; instinct: InstinctKey }
+  | { type: 'buyMetaUpgrade'; upgradeId: MetaUpgradeKey }
+  | { type: 'setMapTier'; tier: number };

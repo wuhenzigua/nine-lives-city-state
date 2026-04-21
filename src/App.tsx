@@ -27,6 +27,8 @@ import {
   getHottestNodeId,
   getMostVulnerableNodeId,
   getFrontlineSummary,
+  getMetaUpgradePanel,
+  getMapTierPanel,
 } from './game/logic';
 import type { ResourceMap } from './game/types';
 
@@ -170,6 +172,8 @@ function App() {
   const vulnerableNodeName = vulnerableNodeId ? getNodeById(vulnerableNodeId).name : '无';
   const vulnerableScore = vulnerableNodeId ? getNodeVulnerabilityScore(state, vulnerableNodeId) : 0;
   const frontlineSummary = getFrontlineSummary(state);
+  const metaUpgradePanel = getMetaUpgradePanel(state);
+  const mapTierPanel = getMapTierPanel(state);
   const currentThreshold = attentionThresholds.find(
     (threshold) => state.attention <= threshold.max,
   );
@@ -286,6 +290,10 @@ function App() {
             <div className="status-row">
               <span>永久命途</span>
               <strong>{state.unlockedInstincts.length} / {instincts.length}</strong>
+            </div>
+            <div className="status-row">
+              <span>当前地图</span>
+              <strong>{state.currentMapTier} 级</strong>
             </div>
           </div>
         </div>
@@ -505,6 +513,55 @@ function App() {
                 </span>
                 <p>完成一次稳定黎明结算</p>
               </div>
+            </div>
+          </section>
+
+          <section className="panel-section">
+            <div className="section-heading">
+              <div>
+                <p className="mini-label">局外成长</p>
+                <h2>传说用途</h2>
+              </div>
+              <span className="soft-chip">可用传说 {state.archiveLegend}</span>
+            </div>
+
+            <div className="building-list">
+              {metaUpgradePanel.map((upgrade) => (
+                <article key={upgrade.id} className="building-card">
+                  <div>
+                    <strong>{upgrade.name}</strong>
+                    <small>
+                      等级 {upgrade.level}/{upgrade.maxLevel}
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={upgrade.cost === null || state.archiveLegend < (upgrade.cost ?? 0)}
+                    onClick={() => dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
+                  >
+                    {upgrade.cost === null ? '已满级' : `升级 -${upgrade.cost}`}
+                  </button>
+                </article>
+              ))}
+            </div>
+
+            <div className="chip-row">
+              {mapTierPanel.map((tier) => (
+                <button
+                  key={tier.tier}
+                  type="button"
+                  className="ghost-button ghost-button-compact"
+                  disabled={!tier.unlocked && state.archiveLegend < tier.unlockCost}
+                  onClick={() => dispatch({ type: 'setMapTier', tier: tier.tier })}
+                >
+                  {tier.active
+                    ? `${tier.tier}级地图（当前）`
+                    : tier.unlocked
+                      ? `切换到${tier.tier}级`
+                      : `解锁${tier.tier}级 -${tier.unlockCost}`}
+                </button>
+              ))}
             </div>
           </section>
         </aside>
