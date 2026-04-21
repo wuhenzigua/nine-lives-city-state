@@ -31,7 +31,7 @@ import {
   getEraPanel,
   getAvailableJobs,
 } from './game/logic';
-import type { GameState, ResourceMap } from './game/types';
+import type { GameState, ResourceKey, ResourceMap } from './game/types';
 
 const SAVE_KEY = 'nine-lives-city-state-save-v1';
 
@@ -101,16 +101,35 @@ const canAfford = (resources: ResourceMap, cost: Partial<ResourceMap>) =>
 const compactText = (value: string, limit = 40) =>
   value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
 
-const getVisibleResourceOrder = (era: GameState['era']) =>
-  resourceOrder.filter((key) => {
-    if (key === 'tech') {
-      return era !== 'survival';
-    }
-    if (key === 'faith') {
-      return era === 'theology' || era === 'ascension';
-    }
-    return true;
-  });
+const getMetaUpgradeEffectText = (
+  upgradeId: 'deepLarder' | 'scentDoctrine' | 'moonLedger',
+  level: number,
+) => {
+  if (upgradeId === 'deepLarder') {
+    return `每级开局 +2 残羹（当前 +${level * 2}）`;
+  }
+  if (upgradeId === 'scentDoctrine') {
+    return `每级开局 +2 气味（当前 +${level * 2}）`;
+  }
+  return `每级降低前线漂移约 0.02（当前约 -${(level * 0.02).toFixed(2)}）`;
+};
+
+const getVisibleResourceOrder = (era: GameState['era']): ResourceKey[] => {
+  const base: ResourceKey[] = [
+    'scraps',
+    'scent',
+    'trust',
+    'intel',
+    'legend',
+  ];
+  if (era === 'survival') {
+    return base;
+  }
+  if (era === 'technology') {
+    return [...base, 'tech'] as ResourceKey[];
+  }
+  return [...base, 'tech', 'faith'] as ResourceKey[];
+};
 
 const getDecisionHint = ({
   attention,
@@ -570,6 +589,7 @@ function App() {
                 <article key={upgrade.id} className="building-card">
                   <div>
                     <strong>{upgrade.name}</strong>
+                    <p>{getMetaUpgradeEffectText(upgrade.id, upgrade.level)}</p>
                     <small>
                       等级 {upgrade.level}/{upgrade.maxLevel}
                     </small>
