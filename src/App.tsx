@@ -66,6 +66,9 @@ const describeYield = (yieldMap: Partial<ResourceMap>) => {
   return items.length > 0 ? items.join(' · ') : '当前阶段无显著产出';
 };
 
+const summarizeYield = (yieldMap: Partial<ResourceMap>) =>
+  resourceOrder.reduce((sum, key) => sum + (yieldMap[key] ?? 0), 0);
+
 const canAfford = (resources: ResourceMap, cost: Partial<ResourceMap>) =>
   resourceOrder.every((key) => resources[key] >= (cost[key] ?? 0));
 
@@ -137,6 +140,7 @@ function App() {
     createInitialState(),
   );
   const [dawnToastCycle, setDawnToastCycle] = useState<number | null>(null);
+  const [compactJobs, setCompactJobs] = useState(true);
 
   const selectedNode = getNodeById(state.selectedNodeId);
   const selectedStatus = getNodeStatus(state, selectedNode.id);
@@ -341,10 +345,19 @@ function App() {
                 <p className="mini-label">猫口分工</p>
                 <h2>{state.totalCats} / {state.catCap} 只猫在岗</h2>
               </div>
-              <span className="soft-chip">闲置 {idleCats}</span>
+              <div className="heading-actions">
+                <span className="soft-chip">闲置 {idleCats}</span>
+                <button
+                  type="button"
+                  className="ghost-button ghost-button-compact"
+                  onClick={() => setCompactJobs((current) => !current)}
+                >
+                  {compactJobs ? '展开说明' : '收起说明'}
+                </button>
+              </div>
             </div>
 
-            <div className="job-list">
+            <div className={`job-list ${compactJobs ? 'compact' : ''}`}>
               {jobs.map((job) => (
                 <article key={job.id} className="job-card">
                   <div className="job-copy">
@@ -356,8 +369,17 @@ function App() {
                       </div>
                     </div>
                     <small>
-                      白天 {describeYield(job.dayYield)}<br />
-                      夜晚 {describeYield(job.nightYield)}
+                      {compactJobs ? (
+                        <>
+                          日 +{formatNumber(summarizeYield(job.dayYield))}
+                          /夜 +{formatNumber(summarizeYield(job.nightYield))}
+                        </>
+                      ) : (
+                        <>
+                          白天 {describeYield(job.dayYield)}<br />
+                          夜晚 {describeYield(job.nightYield)}
+                        </>
+                      )}
                     </small>
                   </div>
                   <div className="stepper">
@@ -464,34 +486,6 @@ function App() {
                 </span>
                 <p>完成一次稳定黎明结算</p>
               </div>
-            </div>
-          </section>
-
-          <section className="panel-section">
-            <div className="section-heading">
-              <div>
-                <p className="mini-label">结算预估</p>
-                <h2>下一次黎明会发生什么</h2>
-              </div>
-            </div>
-
-            <div className="forecast-grid">
-              <article className="forecast-card">
-                <span>猫口消耗</span>
-                <strong>{previewDawn.foodCost} 残羹</strong>
-              </article>
-              <article className="forecast-card">
-                <span>连通维护</span>
-                <strong>{previewDawn.maintenanceCost} 气味</strong>
-              </article>
-              <article className="forecast-card">
-                <span>游离节点</span>
-                <strong>{previewDawn.floatingNodes.length}</strong>
-              </article>
-              <article className="forecast-card">
-                <span>巡查概率</span>
-                <strong>{Math.round(previewDawn.patrolChance * 100)}%</strong>
-              </article>
             </div>
           </section>
         </aside>
@@ -756,6 +750,34 @@ function App() {
                 <span>注意度效果</span>
                 <strong>{attentionBand.hint}</strong>
               </div>
+            </div>
+          </section>
+
+          <section className="panel-section">
+            <div className="section-heading">
+              <div>
+                <p className="mini-label">结算预估</p>
+                <h2>下一次黎明会发生什么</h2>
+              </div>
+            </div>
+
+            <div className="forecast-grid">
+              <article className="forecast-card">
+                <span>猫口消耗</span>
+                <strong>{previewDawn.foodCost} 残羹</strong>
+              </article>
+              <article className="forecast-card">
+                <span>连通维护</span>
+                <strong>{previewDawn.maintenanceCost} 气味</strong>
+              </article>
+              <article className="forecast-card">
+                <span>游离节点</span>
+                <strong>{previewDawn.floatingNodes.length}</strong>
+              </article>
+              <article className="forecast-card">
+                <span>巡查概率</span>
+                <strong>{Math.round(previewDawn.patrolChance * 100)}%</strong>
+              </article>
             </div>
           </section>
 
