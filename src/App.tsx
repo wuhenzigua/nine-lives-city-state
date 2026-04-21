@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useReducer, useState } from 'react';
 import './App.css';
+import manualText from './help/manual.md?raw';
 import {
   buildings,
   instincts,
@@ -20,7 +21,6 @@ import {
   getNodeHeatLabel,
   getNodeDisplayYield,
   getNodeVulnerabilityScore,
-  getOpeningScavengeInfo,
   getNodeStatus,
   getPerSecondSummary,
   getPreviewDawn,
@@ -150,6 +150,7 @@ function App() {
   const [dawnToastCycle, setDawnToastCycle] = useState<number | null>(null);
   const [compactJobs, setCompactJobs] = useState(true);
   const [compactRightRail, setCompactRightRail] = useState(true);
+  const [manualOpen, setManualOpen] = useState(false);
 
   const selectedNode = getNodeById(state.selectedNodeId);
   const selectedStatus = getNodeStatus(state, selectedNode.id);
@@ -163,7 +164,6 @@ function App() {
   const idleCats = state.totalCats - sumAssignments(state.assignments);
   const expansionInfo = getExpansionInfo(state, selectedNode.id);
   const availableBuildings = getAvailableBuildings(state, selectedNode.id);
-  const openingScavenge = getOpeningScavengeInfo(state);
   const phaseInfo = phaseCopy[state.phase];
   const connectedCount = connectedNodeIds.length;
   const hottestNodeId = getHottestNodeId(state);
@@ -259,6 +259,13 @@ function App() {
             <strong>{formatTimer(state.phaseSecondsRemaining)}</strong>
             <p>{phaseInfo.subtitle}</p>
             <div className="phase-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setManualOpen(true)}
+              >
+                功能说明
+              </button>
               <button
                 type="button"
                 className="ghost-button"
@@ -445,51 +452,6 @@ function App() {
                 </article>
               ))}
             </div>
-          </section>
-
-          <section className="panel-section">
-            <div className="section-heading">
-              <div>
-                <p className="mini-label">开局补给</p>
-                <h2>第一天手动翻找</h2>
-              </div>
-              <span className="soft-chip">仅首个白天可用</span>
-            </div>
-
-            {openingScavenge.active ? (
-              <article className="action-card">
-                <div>
-                  <p className="support-copy">
-                    开局残羹储备现在更紧了。第一天白天可以在主巢周边翻找废弃口粮，帮你度过最开始的资源压力。
-                  </p>
-                </div>
-                <div className="chip-row">
-                  <span className="soft-chip">
-                    剩余 {openingScavenge.remainingUses} / {openingScavenge.totalUses} 次
-                  </span>
-                  <span className="soft-chip">
-                    下次 +{openingScavenge.nextScraps} 残羹
-                  </span>
-                  <span className="soft-chip">
-                    注意度 +{openingScavenge.nextAttention}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="primary-button"
-                  disabled={openingScavenge.remainingUses === 0}
-                  onClick={() => dispatch({ type: 'openingScavenge' })}
-                >
-                  {openingScavenge.remainingUses > 0
-                    ? `翻找残羹 +${openingScavenge.nextScraps}`
-                    : '附近已经翻空'}
-                </button>
-              </article>
-            ) : (
-              <p className="empty-copy">
-                第一天下午的翻找窗口已经结束。接下来只能靠觅食猫和节点产出稳住残羹。
-              </p>
-            )}
           </section>
 
           <section className="panel-section">
@@ -1070,6 +1032,27 @@ function App() {
             {state.lastDawnReport.notes[0] ??
               '黎明平静过去，没有发生额外事故。'}
           </small>
+        </aside>
+      ) : null}
+
+      {manualOpen ? (
+        <aside className="manual-modal" role="dialog" aria-modal="true">
+          <div className="manual-card">
+            <div className="section-heading">
+              <div>
+                <p className="mini-label">帮助</p>
+                <h2>功能说明</h2>
+              </div>
+              <button
+                type="button"
+                className="ghost-button ghost-button-compact"
+                onClick={() => setManualOpen(false)}
+              >
+                关闭
+              </button>
+            </div>
+            <pre className="manual-content">{manualText}</pre>
+          </div>
         </aside>
       ) : null}
     </div>
