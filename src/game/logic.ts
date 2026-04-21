@@ -217,7 +217,16 @@ const trimAssignments = (
   totalCats: number,
 ): GameState['assignments'] => {
   const next = { ...assignments };
-  const priority: JobKey[] = ['diplomat', 'scout', 'warden', 'forager'];
+  const priority: JobKey[] = [
+    'canonKeeper',
+    'moonPriest',
+    'techSage',
+    'gearSmith',
+    'diplomat',
+    'scout',
+    'warden',
+    'forager',
+  ];
 
   while (sumAssignments(next) > totalCats) {
     const target = priority.find((jobId) => next[jobId] > 0);
@@ -1245,13 +1254,14 @@ export const getMapTierPanel = (state: GameState) => {
 
 export const getEraPanel = (state: GameState) => {
   const era = getEra(state);
-  const allProjects: EraProjectKey[] = [
-    'signalLab',
-    'automaton',
-    'scriptureHall',
-    'moonCathedral',
+  const technologyProjects: EraProjectKey[] = ['signalLab', 'automaton'];
+  const theologyProjects: EraProjectKey[] = ['scriptureHall', 'moonCathedral'];
+  const visibleProjectIds: EraProjectKey[] = [
+    ...technologyProjects,
+    ...(era === 'theology' || era === 'ascension' ? theologyProjects : []),
   ];
-  const projects = allProjects.map((projectId) => {
+
+  const projects = visibleProjectIds.map((projectId) => {
     const level = state.eraProjectLevels[projectId];
     return {
       id: projectId,
@@ -1259,10 +1269,7 @@ export const getEraPanel = (state: GameState) => {
       level,
       maxLevel: ERA_PROJECT_MAX_LEVEL,
       cost: level >= ERA_PROJECT_MAX_LEVEL ? null : eraProjectCost(projectId, level),
-      lockedByEra:
-        (projectId === 'scriptureHall' || projectId === 'moonCathedral')
-          ? !(era === 'theology' || era === 'ascension')
-          : era === 'survival',
+      lockedByEra: era === 'survival',
     };
   });
   const canAscend =
@@ -1346,6 +1353,17 @@ export const getOpeningScavengeInfo = (state: GameState) => {
 
 export const getPerSecondSummary = (state: GameState) =>
   getPerSecondResourceDelta(state);
+
+export const getAvailableJobs = (state: GameState) =>
+  jobs.filter((job) => {
+    if (!job.eraUnlock) {
+      return true;
+    }
+    if (job.eraUnlock === 'technology') {
+      return state.era !== 'survival';
+    }
+    return state.era === 'theology' || state.era === 'ascension';
+  });
 
 export const getExpansionInfo = (state: GameState, nodeId: string) => {
   const node = nodeMap[nodeId];
@@ -1456,6 +1474,10 @@ export const createInitialState = (
       diplomat: 1,
       scout: 0,
       warden: 0,
+      techSage: 0,
+      gearSmith: 0,
+      moonPriest: 0,
+      canonKeeper: 0,
     },
     controlledNodeIds: [MAIN_NEST_ID],
     buildingsByNode: {

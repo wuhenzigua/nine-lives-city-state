@@ -2,7 +2,15 @@ export type ResourceKey = 'scraps' | 'scent' | 'trust' | 'intel' | 'legend';
 
 export type Phase = 'day' | 'night';
 
-export type JobKey = 'forager' | 'diplomat' | 'scout' | 'warden';
+export type JobKey =
+  | 'forager'
+  | 'diplomat'
+  | 'scout'
+  | 'warden'
+  | 'techSage'
+  | 'gearSmith'
+  | 'moonPriest'
+  | 'canonKeeper';
 
 export type BuildingKey =
   | 'hideout'
@@ -27,6 +35,7 @@ export type JobConfig = {
   description: string;
   dayYield: Partial<ResourceMap>;
   nightYield: Partial<ResourceMap>;
+  eraUnlock?: 'technology' | 'theology';
 };
 
 export type BuildRule =

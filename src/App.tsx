@@ -4,7 +4,6 @@ import manualText from './help/manual.md?raw';
 import {
   buildings,
   instincts,
-  jobs,
   nodes,
   resourceLabels,
   resourceOrder,
@@ -30,6 +29,7 @@ import {
   getMetaUpgradePanel,
   getMapTierPanel,
   getEraPanel,
+  getAvailableJobs,
 } from './game/logic';
 import type { ResourceMap } from './game/types';
 
@@ -176,6 +176,7 @@ function App() {
   const metaUpgradePanel = getMetaUpgradePanel(state);
   const mapTierPanel = getMapTierPanel(state);
   const eraPanel = getEraPanel(state);
+  const availableJobs = getAvailableJobs(state);
   const currentThreshold = attentionThresholds.find(
     (threshold) => state.attention <= threshold.max,
   );
@@ -406,7 +407,7 @@ function App() {
             </div>
 
             <div className={`job-list ${compactJobs ? 'compact' : ''}`}>
-              {jobs.map((job) => (
+              {availableJobs.map((job) => (
                 <article key={job.id} className="job-card">
                   <div className="job-copy">
                     <div className="job-title">
@@ -558,34 +559,40 @@ function App() {
               </span>
             </div>
 
-            <div className="building-list">
-              {eraPanel.projects.map((project) => (
-                <article key={project.id} className="building-card">
-                  <div>
-                    <strong>{project.name}</strong>
-                    <small>
-                      Lv.{project.level}/{project.maxLevel}
-                    </small>
-                  </div>
-                  <button
-                    type="button"
-                    className="primary-button"
-                    disabled={
-                      project.lockedByEra ||
-                      project.cost === null ||
-                      state.archiveLegend < (project.cost ?? 0)
-                    }
-                    onClick={() => dispatch({ type: 'buyEraProject', projectId: project.id })}
-                  >
-                    {project.lockedByEra
-                      ? '时代未解锁'
-                      : project.cost === null
-                        ? '已满级'
-                        : `升级 -${project.cost}`}
-                  </button>
-                </article>
-              ))}
-            </div>
+            {eraPanel.era === 'survival' ? (
+              <p className="empty-copy">
+                科技时代尚未开启。继续轮回强化并积累传说，达到科技门槛后会显示时代项目。
+              </p>
+            ) : (
+              <div className="building-list">
+                {eraPanel.projects.map((project) => (
+                  <article key={project.id} className="building-card">
+                    <div>
+                      <strong>{project.name}</strong>
+                      <small>
+                        Lv.{project.level}/{project.maxLevel}
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={
+                        project.lockedByEra ||
+                        project.cost === null ||
+                        state.archiveLegend < (project.cost ?? 0)
+                      }
+                      onClick={() => dispatch({ type: 'buyEraProject', projectId: project.id })}
+                    >
+                      {project.lockedByEra
+                        ? '时代未解锁'
+                        : project.cost === null
+                          ? '已满级'
+                          : `升级 -${project.cost}`}
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
 
             <button
               type="button"

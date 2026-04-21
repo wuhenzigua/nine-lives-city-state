@@ -79,6 +79,42 @@ export const jobs: JobConfig[] = [
     dayYield: { scent: 0.08 },
     nightYield: { scent: 0.1 },
   },
+  {
+    id: 'techSage',
+    name: '机巧学者',
+    shortName: '学',
+    description: '科技时代职业。组织实验与记录，让情报与传说产出更稳定。',
+    dayYield: { intel: 0.09, legend: 0.01 },
+    nightYield: { intel: 0.12, legend: 0.02 },
+    eraUnlock: 'technology',
+  },
+  {
+    id: 'gearSmith',
+    name: '齿轮匠猫',
+    shortName: '匠',
+    description: '科技时代职业。偏工程效率，补残羹与气味并提供少量情报。',
+    dayYield: { scraps: 0.08, scent: 0.06 },
+    nightYield: { scraps: 0.12, scent: 0.08, intel: 0.02 },
+    eraUnlock: 'technology',
+  },
+  {
+    id: 'moonPriest',
+    name: '月坛祭司',
+    shortName: '祭',
+    description: '神学时代职业。稳定传说积累并在白天减缓注意度。',
+    dayYield: { legend: 0.03, trust: 0.05 },
+    nightYield: { legend: 0.06, intel: 0.03 },
+    eraUnlock: 'theology',
+  },
+  {
+    id: 'canonKeeper',
+    name: '典仪守律',
+    shortName: '律',
+    description: '神学时代职业。提升秩序与边界稳定，强化信任与气味供给。',
+    dayYield: { trust: 0.08, scent: 0.05 },
+    nightYield: { trust: 0.06, scent: 0.08, legend: 0.02 },
+    eraUnlock: 'theology',
+  },
 ];
 
 export const buildings: BuildingConfig[] = [
