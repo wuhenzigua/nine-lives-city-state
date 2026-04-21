@@ -1,0 +1,64 @@
+:root {
+  --bg: #efe4d1;
+  --bg-soft: #f8f1e4;
+  --paper: rgba(255, 250, 240, 0.76);
+  --paper-strong: rgba(255, 250, 240, 0.92);
+  --line: rgba(94, 77, 55, 0.14);
+  --line-strong: rgba(94, 77, 55, 0.24);
+  --ink: #1e201e;
+  --ink-soft: #645a4f;
+  --accent: #af6034;
+  --accent-strong: #d57c37;
+  --safe: #2d7a6e;
+  --warning: #b26d2f;
+  --danger: #b84839;
+  --shadow: 0 24px 60px rgba(69, 51, 30, 0.12);
+  --title-font: 'Avenir Next Condensed', 'DIN Alternate', 'PingFang SC', sans-serif;
+  --body-font: 'Iowan Old Style', 'Noto Serif SC', 'Songti SC', serif;
+
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(213, 124, 55, 0.14), transparent 30%),
+    radial-gradient(circle at right 15%, rgba(45, 122, 110, 0.12), transparent 28%),
+    linear-gradient(180deg, #f7efdf 0%, #ecdfc9 100%);
+  font-family: var(--body-font);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}

@@ -1,0 +1,876 @@
+import {
+  MAIN_NEST_ID,
+  PHASE_DURATION_SECONDS,
+  SUBWAY_ID,
+  buildings,
+  emptyResources,
+  initialResources,
+  jobs,
+  nodes,
+  resourceOrder,
+} from './config';
+import type {
+  Action,
+  BuildingKey,
+  DawnReport,
+  GameState,
+  JobKey,
+  LogEntry,
+  NodeConfig,
+  ResourceMap,
+} from './types';
+
+const nodeMap = Object.fromEntries(nodes.map((node) => [node.id, node])) as Record<
+  string,
+  NodeConfig
+>;
+
+const buildingMap = Object.fromEntries(
+  buildings.map((building) => [building.id, building]),
+) as Record<BuildingKey, (typeof buildings)[number]>;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const copyResources = (resources: ResourceMap): ResourceMap => ({ ...resources });
+
+const addResources = (
+  base: ResourceMap,
+  delta: Partial<ResourceMap>,
+  multiplier = 1,
+): ResourceMap => {
+  const next = copyResources(base);
+
+  for (const key of resourceOrder) {
+    const amount = delta[key] ?? 0;
+    next[key] = Math.max(0, next[key] + amount * multiplier);
+  }
+
+  return next;
+};
+
+const spendResources = (
+  base: ResourceMap,
+  cost: Partial<ResourceMap>,
+): ResourceMap => {
+  const next = copyResources(base);
+
+  for (const key of resourceOrder) {
+    const amount = cost[key] ?? 0;
+    next[key] = Math.max(0, next[key] - amount);
+  }
+
+  return next;
+};
+
+const canAfford = (resources: ResourceMap, cost: Partial<ResourceMap>) =>
+  resourceOrder.every((key) => resources[key] >= (cost[key] ?? 0));
+
+const hasBuilding = (
+  state: GameState,
+  nodeId: string,
+  buildingId: BuildingKey,
+) => state.buildingsByNode[nodeId]?.includes(buildingId) ?? false;
+
+const hasGlobalBuilding = (state: GameState, buildingId: BuildingKey) =>
+  Object.values(state.buildingsByNode).some((list) => list.includes(buildingId));
+
+const sumAssignments = (assignments: GameState['assignments']) =>
+  Object.values(assignments).reduce((sum, value) => sum + value, 0);
+
+const trimAssignments = (
+  assignments: GameState['assignments'],
+  totalCats: number,
+): GameState['assignments'] => {
+  const next = { ...assignments };
+  const priority: JobKey[] = ['diplomat', 'scout', 'warden', 'forager'];
+
+  while (sumAssignments(next) > totalCats) {
+    const target = priority.find((jobId) => next[jobId] > 0);
+
+    if (!target) {
+      break;
+    }
+
+    next[target] -= 1;
+  }
+
+  return next;
+};
+
+const computeConnectedNodeIds = (controlledNodeIds: string[]) => {
+  const controlled = new Set(controlledNodeIds);
+
+  if (!controlled.has(MAIN_NEST_ID)) {
+    return new Set<string>();
+  }
+
+  const queue = [MAIN_NEST_ID];
+  const connected = new Set<string>([MAIN_NEST_ID]);
+
+  while (queue.length) {
+    const current = queue.shift()!;
+
+    for (const neighborId of nodeMap[current].neighbors) {
+      if (!controlled.has(neighborId) || connected.has(neighborId)) {
+        continue;
+      }
+
+      connected.add(neighborId);
+      queue.push(neighborId);
+    }
+  }
+
+  return connected;
+};
+
+export const getFloatingNodeIds = (controlledNodeIds: string[]) => {
+  const connected = computeConnectedNodeIds(controlledNodeIds);
+
+  return controlledNodeIds.filter((nodeId) => !connected.has(nodeId));
+};
+
+export const getConnectedNodeIds = (controlledNodeIds: string[]) =>
+  Array.from(computeConnectedNodeIds(controlledNodeIds));
+
+const pushLog = (
+  state: GameState,
+  title: string,
+  detail: string,
+  tone: LogEntry['tone'],
+) => ({
+  ...state,
+  nextLogId: state.nextLogId + 1,
+  logs: [{ id: state.nextLogId, title, detail, tone }, ...state.logs].slice(0, 16),
+});
+
+const currentObservationNodes = (state: GameState) =>
+  Object.entries(state.buildingsByNode)
+    .filter(([, list]) => list.includes('observationPost'))
+    .map(([nodeId]) => nodeId);
+
+const getAdjacentObservationBonus = (state: GameState, nodeId: string) => {
+  const observationNodes = currentObservationNodes(state);
+
+  return observationNodes.some((sourceNodeId) =>
+    nodeMap[sourceNodeId].neighbors.includes(nodeId),
+  )
+    ? 0.1
+    : 0;
+};
+
+const getTrustMultiplier = (state: GameState) => {
+  let multiplier = 1;
+
+  if (state.attention >= 70) {
+    multiplier *= 0.45;
+  } else if (state.attention >= 40) {
+    multiplier *= 0.72;
+  }
+
+  if (state.instinct === 'kinship' && state.phase === 'day') {
+    multiplier *= 1.35;
+  }
+
+  return multiplier;
+};
+
+const getPhaseNodeYield = (
+  state: GameState,
+  nodeId: string,
+  connected: Set<string>,
+): Partial<ResourceMap> => {
+  const node = nodeMap[nodeId];
+  const baseYield = state.phase === 'day' ? node.dayYield : node.nightYield;
+  const connectedFactor = connected.has(nodeId) ? 1 : 0.35;
+  const riskFactor =
+    state.instinct === 'nightRaid' && state.phase === 'night' && node.risk === 3
+      ? 1.25
+      : 1;
+
+  const yieldMap: Partial<ResourceMap> = {};
+
+  for (const key of resourceOrder) {
+    const value = baseYield[key];
+
+    if (value) {
+      yieldMap[key] = value * connectedFactor * riskFactor;
+    }
+  }
+
+  return yieldMap;
+};
+
+const getPerSecondResourceDelta = (state: GameState) => {
+  let delta = emptyResources();
+  const connected = computeConnectedNodeIds(state.controlledNodeIds);
+
+  for (const job of jobs) {
+    const assigned = state.assignments[job.id];
+    const jobYield = state.phase === 'day' ? job.dayYield : job.nightYield;
+
+    delta = addResources(delta, jobYield, assigned);
+  }
+
+  for (const nodeId of state.controlledNodeIds) {
+    delta = addResources(delta, getPhaseNodeYield(state, nodeId, connected));
+  }
+
+  delta.trust *= getTrustMultiplier(state);
+
+  return delta;
+};
+
+const getPerSecondAttentionDelta = (state: GameState) => {
+  let delta = 0;
+  const floatingNodes = getFloatingNodeIds(state.controlledNodeIds);
+
+  if (state.phase === 'day') {
+    delta -= 8 / PHASE_DURATION_SECONDS;
+    delta -= state.assignments.diplomat * 0.048;
+
+    if (state.instinct === 'kinship') {
+      delta -= 0.02;
+    }
+  } else {
+    delta -= state.assignments.diplomat * 0.012;
+    delta += floatingNodes.length * 0.01;
+  }
+
+  return delta;
+};
+
+const buildDawnReport = (
+  foodCost: number,
+  maintenanceCost: number,
+  floatingNodes: string[],
+  lostNodes: string[],
+  recruitedCat: boolean,
+  patrolTriggered: boolean,
+  stable: boolean,
+  notes: string[],
+): DawnReport => ({
+  foodCost,
+  maintenanceCost,
+  floatingNodes,
+  lostNodes,
+  recruitedCat,
+  patrolTriggered,
+  stable,
+  notes,
+});
+
+const getFrontierNodeIds = (controlledNodeIds: string[]) =>
+  controlledNodeIds.filter((nodeId) => {
+    if (nodeId === MAIN_NEST_ID) {
+      return false;
+    }
+
+    return nodeMap[nodeId].neighbors.some((neighborId) => !controlledNodeIds.includes(neighborId));
+  });
+
+const nodeLossOrder = (controlledNodeIds: string[]) =>
+  [...controlledNodeIds]
+    .filter((nodeId) => nodeId !== MAIN_NEST_ID)
+    .sort((left, right) => {
+      const frontierNodeIds = new Set(getFrontierNodeIds(controlledNodeIds));
+      const frontierBoost =
+        Number(frontierNodeIds.has(right)) - Number(frontierNodeIds.has(left));
+
+      if (frontierBoost !== 0) {
+        return frontierBoost;
+      }
+
+      return nodeMap[right].risk - nodeMap[left].risk;
+    });
+
+const resolveDawn = (state: GameState) => {
+  let nextState = {
+    ...state,
+    buildingsByNode: { ...state.buildingsByNode },
+  };
+  const resources = copyResources(state.resources);
+  let totalCats = state.totalCats;
+  let assignments = { ...state.assignments };
+  let controlledNodeIds = [...state.controlledNodeIds];
+  let attention = state.attention;
+  const notes: string[] = [];
+  const lostNodes: string[] = [];
+
+  const foodCost = totalCats * 3;
+  const baseMaintenance = controlledNodeIds
+    .filter((nodeId) => nodeId !== MAIN_NEST_ID)
+    .reduce(
+      (sum, nodeId) => sum + (hasBuilding(state, nodeId, 'scentMarker') ? 1 : 2),
+      0,
+    );
+  const maintenanceDiscount = controlledNodeIds.includes('acBridge') ? 1 : 0;
+  const maintenanceCost = Math.max(0, baseMaintenance - maintenanceDiscount);
+
+  resources.scraps = Math.max(0, resources.scraps - foodCost);
+  resources.scent = Math.max(0, resources.scent - maintenanceCost);
+
+  if (state.resources.scraps < foodCost) {
+    const starvationLoss = Math.min(
+      totalCats - 1,
+      Math.ceil((foodCost - state.resources.scraps) / 3),
+    );
+
+    totalCats -= starvationLoss;
+    assignments = trimAssignments(assignments, totalCats);
+    attention = clamp(attention + starvationLoss * 6, 0, 100);
+    notes.push(`残羹不足，失去了 ${starvationLoss} 只猫。`);
+  }
+
+  if (state.resources.scent < maintenanceCost) {
+    const shortfall = maintenanceCost - state.resources.scent;
+    const candidates = nodeLossOrder(controlledNodeIds);
+    const dropCount = Math.min(candidates.length, Math.ceil(shortfall / 2));
+
+    for (const nodeId of candidates.slice(0, dropCount)) {
+      controlledNodeIds = controlledNodeIds.filter((value) => value !== nodeId);
+      delete nextState.buildingsByNode[nodeId];
+      lostNodes.push(nodeId);
+    }
+
+    if (dropCount > 0) {
+      attention = clamp(attention + dropCount * 8, 0, 100);
+      notes.push(`气味维护崩口，外围节点失守：${lostNodes.map((id) => nodeMap[id].name).join('、')}。`);
+    }
+  }
+
+  const floatingNodes = getFloatingNodeIds(controlledNodeIds);
+
+  if (floatingNodes.length > 0) {
+    attention = clamp(attention + floatingNodes.length * 5, 0, 100);
+    notes.push(`存在游离节点：${floatingNodes.map((id) => nodeMap[id].name).join('、')}。`);
+  }
+
+  const patrolChance =
+    attention >= 100 ? 1 : attention >= 70 ? 0.35 + (attention - 70) * 0.015 : 0;
+  const patrolTriggered = Math.random() < patrolChance;
+
+  if (patrolTriggered) {
+    const target = nodeLossOrder(controlledNodeIds)[0];
+
+    if (target) {
+      controlledNodeIds = controlledNodeIds.filter((value) => value !== target);
+      delete nextState.buildingsByNode[target];
+      lostNodes.push(target);
+      notes.push(`黎明巡查切走了 ${nodeMap[target].name}。`);
+    } else {
+      resources.scraps = Math.max(0, resources.scraps - 6);
+      notes.push('黎明巡查扫过主巢周边，带走了部分残羹。');
+    }
+
+    attention = clamp(attention - 24, 0, 100);
+  }
+
+  const connectedAfterDawn = computeConnectedNodeIds(controlledNodeIds);
+  const moonPlatformOnline =
+    controlledNodeIds.includes(SUBWAY_ID) &&
+    connectedAfterDawn.has(SUBWAY_ID) &&
+    hasBuilding(nextState, SUBWAY_ID, 'moonPlatform');
+
+  if (moonPlatformOnline) {
+    resources.legend += 2;
+    notes.push('月台与地铁废口共振，额外收集了 2 点传说。');
+  }
+
+  const recruitmentChance = clamp(
+    0.15 +
+      Math.min(resources.trust, 16) * 0.025 +
+      connectedAfterDawn.size * 0.04 +
+      (state.instinct === 'kinship' ? 0.08 : 0),
+    0.15,
+    0.82,
+  );
+  const recruitedCat =
+    totalCats < state.catCap &&
+    resources.scraps >= 6 &&
+    Math.random() < recruitmentChance;
+
+  if (recruitedCat) {
+    totalCats += 1;
+    notes.push('新的流浪猫循着气味加入了城邦。');
+  }
+
+  assignments = trimAssignments(assignments, totalCats);
+
+  const stable =
+    lostNodes.length === 0 &&
+    floatingNodes.length === 0 &&
+    !patrolTriggered &&
+    state.resources.scraps >= foodCost &&
+    state.resources.scent >= maintenanceCost;
+
+  nextState = {
+    ...nextState,
+    resources,
+    totalCats,
+    assignments,
+    controlledNodeIds,
+    attention,
+    lastDawnReport: buildDawnReport(
+      foodCost,
+      maintenanceCost,
+      floatingNodes,
+      lostNodes,
+      recruitedCat,
+      patrolTriggered,
+      stable,
+      notes,
+    ),
+    cycleCount: state.cycleCount + 1,
+  };
+
+  const connectedCount = computeConnectedNodeIds(controlledNodeIds).size;
+  const rebirthReady =
+    stable &&
+    moonPlatformOnline &&
+    connectedCount >= 4 &&
+    nextState.controlledNodeIds.includes(SUBWAY_ID);
+
+  nextState.rebirthReady = rebirthReady;
+
+  nextState = pushLog(
+    nextState,
+    '黎明结算',
+    notes.length > 0 ? notes.join(' ') : '这一夜平稳收束，气味网络保持完整。',
+    stable ? 'good' : 'warning',
+  );
+
+  return nextState;
+};
+
+const transitionPhase = (state: GameState) => {
+  if (state.phase === 'day') {
+    return pushLog(
+      {
+        ...state,
+        phase: 'night',
+        phaseSecondsRemaining: PHASE_DURATION_SECONDS,
+      },
+      '夜幕降下',
+      '夜间行动窗口开启，扩张成本下降，但失误更致命。',
+      'neutral',
+    );
+  }
+
+  return resolveDawn({
+    ...state,
+    phase: 'day',
+    phaseSecondsRemaining: PHASE_DURATION_SECONDS,
+  });
+};
+
+const maybeTogglePhase = (state: GameState) => {
+  if (state.phaseSecondsRemaining > 1) {
+    return { ...state, phaseSecondsRemaining: state.phaseSecondsRemaining - 1 };
+  }
+
+  return transitionPhase(state);
+};
+
+const expandNode = (state: GameState, nodeId: string) => {
+  const node = nodeMap[nodeId];
+
+  if (!node || state.controlledNodeIds.includes(nodeId)) {
+    return state;
+  }
+
+  const connected = computeConnectedNodeIds(state.controlledNodeIds);
+  const isReachable = node.neighbors.some((neighborId) => connected.has(neighborId));
+
+  if (!isReachable) {
+    return pushLog(
+      state,
+      '扩张失败',
+      '目标节点没有和当前气味网络相连，必须先拿到中继点。',
+      'danger',
+    );
+  }
+
+  const scentCost =
+    state.phase === 'night'
+      ? Math.max(2, 6 - (state.instinct === 'nightRaid' ? 2 : 0))
+      : 10;
+  const baseCost = { scent: scentCost };
+
+  if (!canAfford(state.resources, baseCost)) {
+    return pushLog(
+      state,
+      '气味不足',
+      `占领 ${node.name} 需要 ${scentCost} 点气味。`,
+      'warning',
+    );
+  }
+
+  let failureChance =
+    (state.phase === 'night' ? 0.1 : 0.24) +
+    node.risk * (state.phase === 'night' ? 0.12 : 0.16) +
+    state.attention / 240;
+
+  failureChance -= state.assignments.scout * (state.phase === 'night' ? 0.07 : 0.04);
+  failureChance -= Math.min(state.resources.intel, 14) * 0.01;
+  failureChance -= getAdjacentObservationBonus(state, nodeId);
+
+  if (state.instinct === 'kinship' && state.phase === 'day') {
+    failureChance -= 0.04;
+  }
+
+  if (state.instinct === 'nightRaid' && state.phase === 'night') {
+    failureChance -= 0.08;
+  }
+
+  failureChance = clamp(failureChance, 0.08, 0.82);
+
+  const nextState = {
+    ...state,
+    resources: spendResources(state.resources, baseCost),
+    selectedNodeId: nodeId,
+  };
+
+  const actionAttention =
+    (state.phase === 'day' ? 8 : 0) + (state.phase === 'night' ? 6 : 3) + node.risk * 5;
+  const success = Math.random() >= failureChance;
+
+  const updatedAttention = clamp(nextState.attention + actionAttention, 0, 100);
+
+  if (success) {
+    return pushLog(
+      {
+        ...nextState,
+        attention: updatedAttention,
+        controlledNodeIds: [...state.controlledNodeIds, nodeId],
+      },
+      '节点占领',
+      `${node.name} 已纳入城邦。风险 ${node.risk}/3，当前扩张失败率约 ${Math.round(
+        failureChance * 100,
+      )}%。`,
+      'good',
+    );
+  }
+
+  nextState.attention = clamp(nextState.attention + 6, 0, 100);
+
+  return pushLog(
+    {
+      ...nextState,
+      attention: clamp(updatedAttention + 6, 0, 100),
+    },
+    '行动暴露',
+    `${node.name} 这次没有拿下，注意度明显上升。失败率约 ${Math.round(
+      failureChance * 100,
+    )}%。`,
+    'danger',
+  );
+};
+
+const canBuildAtNode = (
+  state: GameState,
+  nodeId: string,
+  buildingId: BuildingKey,
+) => {
+  const building = buildingMap[buildingId];
+
+  if (!building) {
+    return false;
+  }
+
+  if (!state.controlledNodeIds.includes(nodeId)) {
+    return false;
+  }
+
+  if (hasBuilding(state, nodeId, buildingId)) {
+    return false;
+  }
+
+  if (building.unique === 'global' && hasGlobalBuilding(state, buildingId)) {
+    return false;
+  }
+
+  if (building.buildRule === 'mainNest') {
+    return nodeId === MAIN_NEST_ID;
+  }
+
+  if (building.buildRule === 'subway') {
+    return nodeId === SUBWAY_ID;
+  }
+
+  if (building.buildRule === 'controlledNonMain') {
+    return nodeId !== MAIN_NEST_ID;
+  }
+
+  return true;
+};
+
+const buildStructure = (
+  state: GameState,
+  nodeId: string,
+  buildingId: BuildingKey,
+) => {
+  const building = buildingMap[buildingId];
+
+  if (!building || !canBuildAtNode(state, nodeId, buildingId)) {
+    return state;
+  }
+
+  if (!canAfford(state.resources, building.cost)) {
+    return pushLog(
+      state,
+      '建造失败',
+      `${building.name} 所需资源还没凑齐。`,
+      'warning',
+    );
+  }
+
+  const buildingsForNode = [...(state.buildingsByNode[nodeId] ?? []), buildingId];
+  const nextState: GameState = {
+    ...state,
+    resources: spendResources(state.resources, building.cost),
+    buildingsByNode: {
+      ...state.buildingsByNode,
+      [nodeId]: buildingsForNode,
+    },
+    catCap: buildingId === 'hideout' ? state.catCap + 2 : state.catCap,
+  };
+
+  if (buildingId === 'moonPlatform') {
+    nextState.resources.legend += 3;
+  }
+
+  return pushLog(
+    nextState,
+    '建筑落成',
+    `${building.name} 已在 ${nodeMap[nodeId].name} 完成。${building.description}`,
+    'good',
+  );
+};
+
+const rebirth = (state: GameState, instinct: GameState['instinct']) => {
+  if (!state.rebirthReady || !instinct) {
+    return state;
+  }
+
+  const next = createInitialState(instinct, state.lives + 1, state.archiveLegend + Math.floor(state.resources.legend));
+
+  return pushLog(
+    next,
+    '换命完成',
+    `新的城邦带着 ${instinct === 'kinship' ? '亲人本能' : '夜袭本能'} 醒来。`,
+    'good',
+  );
+};
+
+const assignCat = (state: GameState, jobId: JobKey, delta: 1 | -1) => {
+  const nextAssignments = { ...state.assignments };
+  const idleCats = state.totalCats - sumAssignments(state.assignments);
+
+  if (delta === 1 && idleCats <= 0) {
+    return state;
+  }
+
+  if (delta === -1 && nextAssignments[jobId] <= 0) {
+    return state;
+  }
+
+  nextAssignments[jobId] += delta;
+
+  return {
+    ...state,
+    assignments: nextAssignments,
+  };
+};
+
+const tick = (state: GameState) => {
+  const delta = getPerSecondResourceDelta(state);
+  const nextState = {
+    ...state,
+    resources: addResources(state.resources, delta),
+    attention: clamp(state.attention + getPerSecondAttentionDelta(state), 0, 100),
+  };
+
+  return maybeTogglePhase(nextState);
+};
+
+export const formatNumber = (value: number) =>
+  value >= 10 ? value.toFixed(0) : value.toFixed(1);
+
+export const getAttentionBand = (attention: number) => {
+  if (attention >= 70) {
+    return { label: '高压区', hint: '下一次黎明可能触发巡查', tone: 'danger' as const };
+  }
+
+  if (attention >= 40) {
+    return { label: '紧张区', hint: '信任增长变慢', tone: 'warning' as const };
+  }
+
+  return { label: '安全区', hint: '扩张节奏仍可控', tone: 'good' as const };
+};
+
+export const getNodeById = (nodeId: string) => nodeMap[nodeId];
+
+export const getControlledNodeSet = (state: GameState) =>
+  new Set(state.controlledNodeIds);
+
+export const getNodeStatus = (state: GameState, nodeId: string) => {
+  const connected = computeConnectedNodeIds(state.controlledNodeIds);
+  const controlled = state.controlledNodeIds.includes(nodeId);
+
+  return {
+    controlled,
+    connected: connected.has(nodeId),
+    floating: controlled && !connected.has(nodeId),
+  };
+};
+
+export const getPreviewDawn = (state: GameState) => {
+  const floatingNodes = getFloatingNodeIds(state.controlledNodeIds);
+  const foodCost = state.totalCats * 3;
+  const maintenanceCost = Math.max(
+    0,
+    state.controlledNodeIds
+      .filter((nodeId) => nodeId !== MAIN_NEST_ID)
+      .reduce(
+        (sum, nodeId) => sum + (hasBuilding(state, nodeId, 'scentMarker') ? 1 : 2),
+        0,
+      ) - (state.controlledNodeIds.includes('acBridge') ? 1 : 0),
+  );
+  const patrolChance =
+    state.attention >= 100 ? 1 : state.attention >= 70 ? 0.35 + (state.attention - 70) * 0.015 : 0;
+
+  return {
+    foodCost,
+    maintenanceCost,
+    floatingNodes,
+    patrolChance: clamp(patrolChance, 0, 1),
+  };
+};
+
+export const getPerSecondSummary = (state: GameState) =>
+  getPerSecondResourceDelta(state);
+
+export const getExpansionInfo = (state: GameState, nodeId: string) => {
+  const node = nodeMap[nodeId];
+
+  if (!node || state.controlledNodeIds.includes(nodeId)) {
+    return null;
+  }
+
+  const connected = computeConnectedNodeIds(state.controlledNodeIds);
+  const reachable = node.neighbors.some((neighborId) => connected.has(neighborId));
+  const scentCost =
+    state.phase === 'night'
+      ? Math.max(2, 6 - (state.instinct === 'nightRaid' ? 2 : 0))
+      : 10;
+
+  let failureChance =
+    (state.phase === 'night' ? 0.1 : 0.24) +
+    node.risk * (state.phase === 'night' ? 0.12 : 0.16) +
+    state.attention / 240;
+
+  failureChance -= state.assignments.scout * (state.phase === 'night' ? 0.07 : 0.04);
+  failureChance -= Math.min(state.resources.intel, 14) * 0.01;
+  failureChance -= getAdjacentObservationBonus(state, nodeId);
+
+  if (state.instinct === 'kinship' && state.phase === 'day') {
+    failureChance -= 0.04;
+  }
+
+  if (state.instinct === 'nightRaid' && state.phase === 'night') {
+    failureChance -= 0.08;
+  }
+
+  return {
+    reachable,
+    scentCost,
+    failureChance: clamp(failureChance, 0.08, 0.82),
+  };
+};
+
+export const getAvailableBuildings = (state: GameState, nodeId: string) =>
+  buildings.filter((building) => canBuildAtNode(state, nodeId, building.id));
+
+export const getNodeDisplayYield = (state: GameState, nodeId: string) => {
+  const connected = computeConnectedNodeIds(state.controlledNodeIds);
+
+  return getPhaseNodeYield(state, nodeId, connected);
+};
+
+export const createInitialState = (
+  instinct: GameState['instinct'] = null,
+  lives = 1,
+  archiveLegend = 0,
+): GameState => {
+  const resources = copyResources(initialResources);
+
+  if (instinct === 'kinship') {
+    resources.trust += 4;
+  }
+
+  if (instinct === 'nightRaid') {
+    resources.scent += 3;
+  }
+
+  const initialState: GameState = {
+    phase: 'day',
+    phaseSecondsRemaining: PHASE_DURATION_SECONDS,
+    attention: instinct === 'kinship' ? 2 : 5,
+    resources,
+    totalCats: 3,
+    catCap: 4,
+    assignments: {
+      forager: 2,
+      diplomat: 1,
+      scout: 0,
+      warden: 0,
+    },
+    controlledNodeIds: [MAIN_NEST_ID],
+    buildingsByNode: {
+      [MAIN_NEST_ID]: [],
+    },
+    selectedNodeId: MAIN_NEST_ID,
+    logs: [
+      {
+        id: 1,
+        title: '九命城邦启动',
+        detail: '主巢已经点亮。先稳住白天，再决定今晚是否扩张。',
+        tone: 'neutral',
+      },
+    ],
+    nextLogId: 2,
+    lastDawnReport: null,
+    instinct,
+    lives,
+    archiveLegend,
+    cycleCount: 0,
+    rebirthReady: false,
+    paused: false,
+  };
+
+  return initialState;
+};
+
+export const gameReducer = (state: GameState, action: Action): GameState => {
+  switch (action.type) {
+    case 'tick':
+      return state.paused ? state : tick(state);
+    case 'togglePause':
+      return { ...state, paused: !state.paused };
+    case 'selectNode':
+      return { ...state, selectedNodeId: action.nodeId };
+    case 'assignCat':
+      return assignCat(state, action.jobId, action.delta);
+    case 'expandNode':
+      return expandNode(state, action.nodeId);
+    case 'build':
+      return buildStructure(state, action.nodeId, action.buildingId);
+    case 'advancePhase':
+      return transitionPhase(state);
+    case 'rebirth':
+      return rebirth(state, action.instinct);
+    default:
+      return state;
+  }
+};
