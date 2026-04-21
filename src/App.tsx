@@ -298,17 +298,14 @@ function App() {
       </section>
 
       <section className="feedback-ribbon">
-        <div className="feedback-lead">
-          <span className="mini-label">当前判断</span>
-          <strong>{decisionHint.title}</strong>
-          <p>{decisionHint.detail}</p>
-        </div>
-
         <div className="ticker-shell" aria-label="城市播报">
-          <span className="mini-label">城市播报</span>
+          <span className="mini-label">实时弹幕</span>
           <div className="ticker-viewport">
             <div className="ticker-track">
               <div className="ticker-row">
+                <span className="ticker-item tone-neutral">
+                  当前判断 · {decisionHint.title} · {compactText(decisionHint.detail, 42)}
+                </span>
                 {tickerEntries.map((entry) => (
                   <span
                     key={entry.id}
@@ -319,6 +316,9 @@ function App() {
                 ))}
               </div>
               <div className="ticker-row" aria-hidden="true">
+                <span className="ticker-item tone-neutral">
+                  当前判断 · {decisionHint.title} · {compactText(decisionHint.detail, 42)}
+                </span>
                 {tickerEntries.map((entry) => (
                   <span
                     key={`${entry.id}-clone`}
@@ -331,38 +331,6 @@ function App() {
             </div>
           </div>
         </div>
-      </section>
-
-      <section className="quick-metrics">
-        <article className="metric-card">
-          <span className="mini-label">网络稳定度</span>
-          <strong>{Math.round((connectedCount / state.controlledNodeIds.length) * 100) || 0}%</strong>
-          <p>
-            已连通 {connectedCount} / 已控 {state.controlledNodeIds.length}，连通越高，黎明损耗越低。
-          </p>
-        </article>
-        <article className="metric-card">
-          <span className="mini-label">下一次巡查风险</span>
-          <strong>{Math.round(previewDawn.patrolChance * 100)}%</strong>
-          <p>风险受注意度与节点风险叠加影响，夜晚激进扩张会继续抬升。</p>
-        </article>
-        <article className="metric-card">
-          <span className="mini-label">当前资源焦点</span>
-          <strong>
-            {previewDawn.foodCost > state.resources.scraps
-              ? '残羹短缺'
-              : previewDawn.maintenanceCost > state.resources.scent
-                ? '气味紧张'
-                : '可以扩张'}
-          </strong>
-          <p>
-            {previewDawn.foodCost > state.resources.scraps
-              ? '优先补足残羹，避免黎明直接掉猫。'
-              : previewDawn.maintenanceCost > state.resources.scent
-                ? '先补气味，防止节点游离导致断网。'
-                : '本轮资源可支撑一次稳健外扩。'}
-          </p>
-        </article>
       </section>
 
       <main className="layout">
