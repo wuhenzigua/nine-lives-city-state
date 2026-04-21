@@ -144,6 +144,7 @@ export type GameState = {
 };
 
 export type Action =
+  | { type: 'reset' }
   | { type: 'tick' }
   | { type: 'togglePause' }
   | { type: 'openingScavenge' }

@@ -31,7 +31,25 @@ import {
   getEraPanel,
   getAvailableJobs,
 } from './game/logic';
-import type { ResourceMap } from './game/types';
+import type { GameState, ResourceMap } from './game/types';
+
+const SAVE_KEY = 'nine-lives-city-state-save-v1';
+
+const loadSavedState = (): GameState => {
+  try {
+    const raw = window.localStorage.getItem(SAVE_KEY);
+    if (!raw) {
+      return createInitialState();
+    }
+    const parsed = JSON.parse(raw) as GameState;
+    if (!parsed || typeof parsed !== 'object') {
+      return createInitialState();
+    }
+    return parsed;
+  } catch {
+    return createInitialState();
+  }
+};
 
 const edges = nodes.flatMap((node) =>
   node.neighbors
@@ -145,7 +163,7 @@ const getDecisionHint = ({
 
 function App() {
   const [state, dispatch] = useReducer(gameReducer, undefined, () =>
-    createInitialState(),
+    loadSavedState(),
   );
   const [dawnToastCycle, setDawnToastCycle] = useState<number | null>(null);
   const [compactJobs, setCompactJobs] = useState(true);
@@ -243,6 +261,10 @@ function App() {
     };
   }, [state.cycleCount, state.lastDawnReport]);
 
+  useEffect(() => {
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+  }, [state]);
+
   return (
     <div className={`app-shell phase-${state.phase}`}>
       <header className="topbar">
@@ -280,6 +302,20 @@ function App() {
                 onClick={() => dispatch({ type: 'advancePhase' })}
               >
                 快进阶段
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  const ok = window.confirm('确定要清空存档并新开一局吗？');
+                  if (!ok) {
+                    return;
+                  }
+                  window.localStorage.removeItem(SAVE_KEY);
+                  dispatch({ type: 'reset' });
+                }}
+              >
+                新开一局
               </button>
             </div>
           </div>

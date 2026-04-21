@@ -1594,6 +1594,8 @@ export const createInitialState = (
 
 export const gameReducer = (state: GameState, action: Action): GameState => {
   switch (action.type) {
+    case 'reset':
+      return createInitialState();
     case 'tick':
       return state.paused ? state : tick(state);
     case 'togglePause':
