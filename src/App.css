@@ -646,6 +646,17 @@ p {
     0 14px 30px rgba(17, 20, 19, 0.28);
 }
 
+.map-node.warming {
+  border-color: rgba(225, 173, 110, 0.7);
+}
+
+.map-node.hotspot {
+  border-color: rgba(232, 128, 116, 0.82);
+  box-shadow:
+    0 0 0 2px rgba(232, 128, 116, 0.32),
+    0 14px 30px rgba(17, 20, 19, 0.3);
+}
+
 .map-node.floating {
   animation: floating-pulse 2.4s ease-in-out infinite;
 }
@@ -721,6 +732,10 @@ p {
 
 .legend-dot.wild {
   background: #a2988e;
+}
+
+.legend-dot.hotspot {
+  background: #dc6b5e;
 }
 
 .selected-copy,
@@ -852,6 +867,16 @@ p {
   position: absolute;
   left: 0;
   color: var(--accent);
+}
+
+.right-rail.compact .building-card p,
+.right-rail.compact .instinct-card p,
+.right-rail.compact .instinct-card ul {
+  display: none;
+}
+
+.right-rail.compact .building-card {
+  align-items: start;
 }
 
 .dawn-toast {

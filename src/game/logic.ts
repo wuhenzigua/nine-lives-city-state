@@ -34,7 +34,43 @@ const buildingMap = Object.fromEntries(
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
+const HEAT_MAX = 100;
+
 const copyResources = (resources: ResourceMap): ResourceMap => ({ ...resources });
+
+const getInitialNodeHeat = () =>
+  Object.fromEntries(nodes.map((node) => [node.id, 0])) as Record<string, number>;
+
+const addHeat = (
+  heatMap: Record<string, number>,
+  nodeId: string,
+  delta: number,
+) => {
+  heatMap[nodeId] = clamp((heatMap[nodeId] ?? 0) + delta, 0, HEAT_MAX);
+};
+
+const decayHeat = (
+  heatMap: Record<string, number>,
+  amount: number,
+) => {
+  for (const node of nodes) {
+    heatMap[node.id] = clamp((heatMap[node.id] ?? 0) - amount, 0, HEAT_MAX);
+  }
+};
+
+const applyPassiveHeat = (state: GameState) => {
+  const nextHeat = { ...state.nodeHeatById };
+  decayHeat(nextHeat, state.phase === 'day' ? 0.24 : 0.12);
+
+  for (const nodeId of state.controlledNodeIds) {
+    const node = nodeMap[nodeId];
+    const base = state.phase === 'night' ? 0.16 : 0.08;
+    const riskBoost = node.risk * (state.phase === 'night' ? 0.08 : 0.04);
+    addHeat(nextHeat, nodeId, base + riskBoost);
+  }
+
+  return nextHeat;
+};
 
 const addResources = (
   base: ResourceMap,
@@ -289,6 +325,20 @@ const nodeLossOrder = (controlledNodeIds: string[]) =>
       return nodeMap[right].risk - nodeMap[left].risk;
     });
 
+const nodeLossOrderWithHeat = (
+  controlledNodeIds: string[],
+  nodeHeatById: Record<string, number>,
+) =>
+  [...controlledNodeIds]
+    .filter((nodeId) => nodeId !== MAIN_NEST_ID)
+    .sort((left, right) => {
+      const heatBoost = (nodeHeatById[right] ?? 0) - (nodeHeatById[left] ?? 0);
+      if (Math.abs(heatBoost) > 0.5) {
+        return heatBoost;
+      }
+      return nodeLossOrder(controlledNodeIds).indexOf(left) - nodeLossOrder(controlledNodeIds).indexOf(right);
+    });
+
 const resolveDawn = (state: GameState) => {
   let nextState = {
     ...state,
@@ -299,8 +349,11 @@ const resolveDawn = (state: GameState) => {
   let assignments = { ...state.assignments };
   let controlledNodeIds = [...state.controlledNodeIds];
   let attention = state.attention;
+  const nodeHeatById = { ...state.nodeHeatById };
   const notes: string[] = [];
   const lostNodes: string[] = [];
+
+  decayHeat(nodeHeatById, 8);
 
   const foodCost = totalCats * 3;
   const baseMaintenance = controlledNodeIds
@@ -329,7 +382,7 @@ const resolveDawn = (state: GameState) => {
 
   if (state.resources.scent < maintenanceCost) {
     const shortfall = maintenanceCost - state.resources.scent;
-    const candidates = nodeLossOrder(controlledNodeIds);
+    const candidates = nodeLossOrderWithHeat(controlledNodeIds, nodeHeatById);
     const dropCount = Math.min(candidates.length, Math.ceil(shortfall / 2));
 
     for (const nodeId of candidates.slice(0, dropCount)) {
@@ -356,13 +409,14 @@ const resolveDawn = (state: GameState) => {
   const patrolTriggered = Math.random() < patrolChance;
 
   if (patrolTriggered) {
-    const target = nodeLossOrder(controlledNodeIds)[0];
+    const target = nodeLossOrderWithHeat(controlledNodeIds, nodeHeatById)[0];
 
     if (target) {
       controlledNodeIds = controlledNodeIds.filter((value) => value !== target);
       delete nextState.buildingsByNode[target];
       lostNodes.push(target);
       notes.push(`黎明巡查切走了 ${nodeMap[target].name}。`);
+      addHeat(nodeHeatById, target, 20);
     } else {
       resources.scraps = Math.max(0, resources.scraps - 6);
       notes.push('黎明巡查扫过主巢周边，带走了部分残羹。');
@@ -427,6 +481,7 @@ const resolveDawn = (state: GameState) => {
       notes,
     ),
     cycleCount: state.cycleCount + 1,
+    nodeHeatById,
   };
 
   const connectedCount = computeConnectedNodeIds(controlledNodeIds).size;
@@ -534,6 +589,7 @@ const expandNode = (state: GameState, nodeId: string) => {
     ...state,
     resources: spendResources(state.resources, baseCost),
     selectedNodeId: nodeId,
+    nodeHeatById: { ...state.nodeHeatById },
   };
 
   const actionAttention =
@@ -543,6 +599,10 @@ const expandNode = (state: GameState, nodeId: string) => {
   const updatedAttention = clamp(nextState.attention + actionAttention, 0, 100);
 
   if (success) {
+    addHeat(nextState.nodeHeatById, nodeId, 24 + node.risk * 6);
+    for (const neighborId of node.neighbors) {
+      addHeat(nextState.nodeHeatById, neighborId, 4);
+    }
     return pushLog(
       {
         ...nextState,
@@ -557,6 +617,7 @@ const expandNode = (state: GameState, nodeId: string) => {
     );
   }
 
+  addHeat(nextState.nodeHeatById, nodeId, 16 + node.risk * 4);
   nextState.attention = clamp(nextState.attention + 6, 0, 100);
 
   return pushLog(
@@ -724,6 +785,7 @@ const tick = (state: GameState) => {
     ...state,
     resources: addResources(state.resources, delta),
     attention: clamp(state.attention + getPerSecondAttentionDelta(state), 0, 100),
+    nodeHeatById: applyPassiveHeat(state),
   };
 
   return maybeTogglePhase(nextState);
@@ -757,7 +819,62 @@ export const getNodeStatus = (state: GameState, nodeId: string) => {
     controlled,
     connected: connected.has(nodeId),
     floating: controlled && !connected.has(nodeId),
+    heat: state.nodeHeatById[nodeId] ?? 0,
   };
+};
+
+export const getNodeHeatLabel = (heat: number) => {
+  if (heat >= 70) {
+    return '高热';
+  }
+  if (heat >= 40) {
+    return '升温';
+  }
+  return '平稳';
+};
+
+export const getNodeVulnerabilityScore = (state: GameState, nodeId: string) => {
+  if (!state.controlledNodeIds.includes(nodeId) || nodeId === MAIN_NEST_ID) {
+    return 0;
+  }
+
+  const node = nodeMap[nodeId];
+  const controlledSet = new Set(state.controlledNodeIds);
+  const controlledNeighbors = node.neighbors.filter((neighborId) =>
+    controlledSet.has(neighborId),
+  ).length;
+  const frontierPressure = node.neighbors.filter((neighborId) =>
+    !controlledSet.has(neighborId),
+  ).length;
+  const disconnectedPenalty = controlledNeighbors <= 1 ? 28 : controlledNeighbors === 2 ? 12 : 0;
+  const riskPressure = node.risk * 14;
+  const heatPressure = (state.nodeHeatById[nodeId] ?? 0) * 0.42;
+
+  return clamp(
+    Math.round(disconnectedPenalty + frontierPressure * 8 + riskPressure + heatPressure),
+    0,
+    100,
+  );
+};
+
+export const getMostVulnerableNodeId = (state: GameState) => {
+  const candidates = state.controlledNodeIds.filter((nodeId) => nodeId !== MAIN_NEST_ID);
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return candidates.sort(
+    (a, b) => getNodeVulnerabilityScore(state, b) - getNodeVulnerabilityScore(state, a),
+  )[0];
+};
+
+export const getHottestNodeId = (state: GameState) => {
+  const candidates = state.controlledNodeIds;
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return candidates.sort((a, b) => (state.nodeHeatById[b] ?? 0) - (state.nodeHeatById[a] ?? 0))[0];
 };
 
 export const getPreviewDawn = (state: GameState) => {
@@ -903,6 +1020,7 @@ export const createInitialState = (
     rebirthReady: false,
     paused: false,
     openingScavengeClicks: 0,
+    nodeHeatById: getInitialNodeHeat(),
   };
 
   return initialState;

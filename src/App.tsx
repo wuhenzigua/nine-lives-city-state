@@ -17,11 +17,15 @@ import {
   getConnectedNodeIds,
   getExpansionInfo,
   getNodeById,
+  getNodeHeatLabel,
   getNodeDisplayYield,
+  getNodeVulnerabilityScore,
   getOpeningScavengeInfo,
   getNodeStatus,
   getPerSecondSummary,
   getPreviewDawn,
+  getHottestNodeId,
+  getMostVulnerableNodeId,
 } from './game/logic';
 import type { ResourceMap } from './game/types';
 
@@ -141,10 +145,13 @@ function App() {
   );
   const [dawnToastCycle, setDawnToastCycle] = useState<number | null>(null);
   const [compactJobs, setCompactJobs] = useState(true);
+  const [compactRightRail, setCompactRightRail] = useState(true);
 
   const selectedNode = getNodeById(state.selectedNodeId);
   const selectedStatus = getNodeStatus(state, selectedNode.id);
   const selectedYield = getNodeDisplayYield(state, selectedNode.id);
+  const selectedHeat = selectedStatus.heat;
+  const selectedVulnerability = getNodeVulnerabilityScore(state, selectedNode.id);
   const attentionBand = getAttentionBand(state.attention);
   const previewDawn = getPreviewDawn(state);
   const incomePerSecond = getPerSecondSummary(state);
@@ -155,6 +162,12 @@ function App() {
   const openingScavenge = getOpeningScavengeInfo(state);
   const phaseInfo = phaseCopy[state.phase];
   const connectedCount = connectedNodeIds.length;
+  const hottestNodeId = getHottestNodeId(state);
+  const hottestNodeName = hottestNodeId ? getNodeById(hottestNodeId).name : '无';
+  const hottestNodeHeat = hottestNodeId ? Math.round(state.nodeHeatById[hottestNodeId] ?? 0) : 0;
+  const vulnerableNodeId = getMostVulnerableNodeId(state);
+  const vulnerableNodeName = vulnerableNodeId ? getNodeById(vulnerableNodeId).name : '无';
+  const vulnerableScore = vulnerableNodeId ? getNodeVulnerabilityScore(state, vulnerableNodeId) : 0;
   const currentThreshold = attentionThresholds.find(
     (threshold) => state.attention <= threshold.max,
   );
@@ -544,6 +557,8 @@ function App() {
                     nodeStatus.controlled ? 'controlled' : 'wild',
                     nodeStatus.connected ? 'connected' : '',
                     nodeStatus.floating ? 'floating' : '',
+                    nodeStatus.heat >= 70 ? 'hotspot' : '',
+                    nodeStatus.heat >= 40 && nodeStatus.heat < 70 ? 'warming' : '',
                     selected ? 'selected' : '',
                   ]
                     .filter(Boolean)
@@ -555,7 +570,7 @@ function App() {
                   onClick={() => dispatch({ type: 'selectNode', nodeId: node.id })}
                 >
                   <span className="map-node-name">{node.name}</span>
-                  <span className="map-node-risk">风险 {node.risk}/3</span>
+                  <span className="map-node-risk">风险 {node.risk}/3 · 热度 {Math.round(nodeStatus.heat)}</span>
                 </button>
               );
             })}
@@ -573,6 +588,10 @@ function App() {
             <span className="legend-item">
               <i className="legend-dot wild" />
               未占领
+            </span>
+            <span className="legend-item">
+              <i className="legend-dot hotspot" />
+              局部热点
             </span>
           </div>
 
@@ -608,6 +627,14 @@ function App() {
                 <div>
                   <span>本阶段产出</span>
                   <strong>{describeYield(selectedYield)}</strong>
+                </div>
+                <div>
+                  <span>局部热点</span>
+                  <strong>{getNodeHeatLabel(selectedHeat)} · {Math.round(selectedHeat)} / 100</strong>
+                </div>
+                <div>
+                  <span>网络脆弱度</span>
+                  <strong>{selectedVulnerability} / 100</strong>
                 </div>
                 <div>
                   <span>已建建筑</span>
@@ -674,13 +701,20 @@ function App() {
           </div>
         </section>
 
-        <aside className="panel right-rail">
+        <aside className={`panel right-rail ${compactRightRail ? 'compact' : ''}`}>
           <section className="panel-section">
             <div className="section-heading">
               <div>
                 <p className="mini-label">建筑面板</p>
                 <h2>对 {selectedNode.name} 的操作</h2>
               </div>
+              <button
+                type="button"
+                className="ghost-button ghost-button-compact"
+                onClick={() => setCompactRightRail((current) => !current)}
+              >
+                {compactRightRail ? '展开右栏' : '精简右栏'}
+              </button>
             </div>
 
             {selectedStatus.controlled ? (
@@ -749,6 +783,14 @@ function App() {
               <div className="status-row">
                 <span>注意度效果</span>
                 <strong>{attentionBand.hint}</strong>
+              </div>
+              <div className="status-row">
+                <span>局部热点</span>
+                <strong>{hottestNodeName} · 热度 {hottestNodeHeat}</strong>
+              </div>
+              <div className="status-row">
+                <span>最脆弱节点</span>
+                <strong>{vulnerableNodeName} · 脆弱度 {vulnerableScore}</strong>
               </div>
             </div>
           </section>

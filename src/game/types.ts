@@ -101,6 +101,7 @@ export type GameState = {
   rebirthReady: boolean;
   paused: boolean;
   openingScavengeClicks: number;
+  nodeHeatById: Record<string, number>;
 };
 
 export type Action =
