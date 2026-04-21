@@ -62,6 +62,8 @@ export type InstinctConfig = {
 
 export type LogTone = 'neutral' | 'good' | 'warning' | 'danger';
 
+export type FrontlineKey = 'human' | 'dogs' | 'rivalCats';
+
 export type LogEntry = {
   id: number;
   title: string;
@@ -102,6 +104,7 @@ export type GameState = {
   paused: boolean;
   openingScavengeClicks: number;
   nodeHeatById: Record<string, number>;
+  frontlinePressure: Record<FrontlineKey, number>;
 };
 
 export type Action =

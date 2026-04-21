@@ -26,6 +26,7 @@ import {
   getPreviewDawn,
   getHottestNodeId,
   getMostVulnerableNodeId,
+  getFrontlineSummary,
 } from './game/logic';
 import type { ResourceMap } from './game/types';
 
@@ -168,6 +169,7 @@ function App() {
   const vulnerableNodeId = getMostVulnerableNodeId(state);
   const vulnerableNodeName = vulnerableNodeId ? getNodeById(vulnerableNodeId).name : '无';
   const vulnerableScore = vulnerableNodeId ? getNodeVulnerabilityScore(state, vulnerableNodeId) : 0;
+  const frontlineSummary = getFrontlineSummary(state);
   const currentThreshold = attentionThresholds.find(
     (threshold) => state.attention <= threshold.max,
   );
@@ -792,6 +794,27 @@ function App() {
                 <span>最脆弱节点</span>
                 <strong>{vulnerableNodeName} · 脆弱度 {vulnerableScore}</strong>
               </div>
+              <div className="status-row">
+                <span>当前前线</span>
+                <strong>{frontlineSummary.entries[0].label} · 压力 {frontlineSummary.entries[0].value}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel-section">
+            <div className="section-heading">
+              <div>
+                <p className="mini-label">外部势力前线</p>
+                <h2>城市反制压力</h2>
+              </div>
+            </div>
+            <div className="network-card">
+              {frontlineSummary.entries.map((entry) => (
+                <div key={entry.key} className="status-row">
+                  <span>{entry.label}</span>
+                  <strong>{entry.value} / 100</strong>
+                </div>
+              ))}
             </div>
           </section>
 

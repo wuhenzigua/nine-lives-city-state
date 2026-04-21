@@ -15,6 +15,7 @@ import type {
   Action,
   BuildingKey,
   DawnReport,
+  FrontlineKey,
   GameState,
   JobKey,
   LogEntry,
@@ -35,6 +36,7 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
 const HEAT_MAX = 100;
+const FRONTLINE_MAX = 100;
 
 const copyResources = (resources: ResourceMap): ResourceMap => ({ ...resources });
 
@@ -70,6 +72,31 @@ const applyPassiveHeat = (state: GameState) => {
   }
 
   return nextHeat;
+};
+
+const applyFrontlineDrift = (state: GameState) => {
+  const next = { ...state.frontlinePressure };
+  const heatPeak = Math.max(...Object.values(state.nodeHeatById), 0);
+  const frontierCount = getFrontierNodeIds(state.controlledNodeIds).length;
+  const disconnected = getFloatingNodeIds(state.controlledNodeIds).length;
+
+  next.human = clamp(
+    next.human + (state.attention >= 65 ? 0.2 : -0.1) + heatPeak * 0.002,
+    0,
+    FRONTLINE_MAX,
+  );
+  next.dogs = clamp(
+    next.dogs + frontierCount * 0.14 + disconnected * 0.3 - 0.08,
+    0,
+    FRONTLINE_MAX,
+  );
+  next.rivalCats = clamp(
+    next.rivalCats + Math.max(0, state.controlledNodeIds.length - 2) * 0.08 - 0.05,
+    0,
+    FRONTLINE_MAX,
+  );
+
+  return next;
 };
 
 const addResources = (
@@ -339,6 +366,10 @@ const nodeLossOrderWithHeat = (
       return nodeLossOrder(controlledNodeIds).indexOf(left) - nodeLossOrder(controlledNodeIds).indexOf(right);
     });
 
+const pickTopFrontline = (pressure: Record<FrontlineKey, number>) =>
+  (Object.entries(pressure) as [FrontlineKey, number][])
+    .sort((a, b) => b[1] - a[1])[0][0];
+
 const resolveDawn = (state: GameState) => {
   let nextState = {
     ...state,
@@ -350,6 +381,7 @@ const resolveDawn = (state: GameState) => {
   let controlledNodeIds = [...state.controlledNodeIds];
   let attention = state.attention;
   const nodeHeatById = { ...state.nodeHeatById };
+  const frontlinePressure = { ...state.frontlinePressure };
   const notes: string[] = [];
   const lostNodes: string[] = [];
 
@@ -425,6 +457,63 @@ const resolveDawn = (state: GameState) => {
     attention = clamp(attention - 24, 0, 100);
   }
 
+  const topFrontline = pickTopFrontline(frontlinePressure);
+  const frontlineTriggerChance = clamp(
+    0.16 + frontlinePressure[topFrontline] / 180,
+    0.16,
+    0.62,
+  );
+  const frontlineTriggered = Math.random() < frontlineTriggerChance;
+
+  if (frontlineTriggered) {
+    if (topFrontline === 'human') {
+      const target = nodeLossOrderWithHeat(controlledNodeIds, nodeHeatById)
+        .filter((nodeId) => (nodeHeatById[nodeId] ?? 0) >= 40)[0];
+      if (target) {
+        controlledNodeIds = controlledNodeIds.filter((value) => value !== target);
+        delete nextState.buildingsByNode[target];
+        lostNodes.push(target);
+        notes.push(`人类前线清理了热点区域，${nodeMap[target].name} 被封控。`);
+        addHeat(nodeHeatById, target, 18);
+      } else {
+        resources.trust = Math.max(0, resources.trust - 3);
+        notes.push('人类前线收紧巡查，城邦信任受挫。');
+      }
+      frontlinePressure.human = clamp(frontlinePressure.human - 22, 0, FRONTLINE_MAX);
+    } else if (topFrontline === 'dogs') {
+      const frontierSet = new Set(getFrontierNodeIds(controlledNodeIds));
+      const target = nodeLossOrderWithHeat(controlledNodeIds, nodeHeatById)
+        .find((nodeId) => frontierSet.has(nodeId));
+      if (target) {
+        controlledNodeIds = controlledNodeIds.filter((value) => value !== target);
+        delete nextState.buildingsByNode[target];
+        lostNodes.push(target);
+        notes.push(`狗群前线切断边界，${nodeMap[target].name} 被冲散。`);
+      } else {
+        resources.scent = Math.max(0, resources.scent - 4);
+        notes.push('狗群在边界扰动，气味维护额外损耗。');
+      }
+      frontlinePressure.dogs = clamp(frontlinePressure.dogs - 24, 0, FRONTLINE_MAX);
+    } else {
+      const frontierSet = new Set(getFrontierNodeIds(controlledNodeIds));
+      const target = nodeLossOrderWithHeat(controlledNodeIds, nodeHeatById)
+        .find((nodeId) => frontierSet.has(nodeId));
+      if (target) {
+        resources.scraps = Math.max(0, resources.scraps - 5);
+        addHeat(nodeHeatById, target, 12);
+        notes.push(`rival 猫群在 ${nodeMap[target].name} 抢边，残羹被截走。`);
+      } else {
+        resources.legend = Math.max(0, resources.legend - 1);
+        notes.push('rival 猫群散播对你不利传闻，传说积累受损。');
+      }
+      frontlinePressure.rivalCats = clamp(
+        frontlinePressure.rivalCats - 20,
+        0,
+        FRONTLINE_MAX,
+      );
+    }
+  }
+
   const connectedAfterDawn = computeConnectedNodeIds(controlledNodeIds);
   const moonPlatformOnline =
     controlledNodeIds.includes(SUBWAY_ID) &&
@@ -482,6 +571,7 @@ const resolveDawn = (state: GameState) => {
     ),
     cycleCount: state.cycleCount + 1,
     nodeHeatById,
+    frontlinePressure,
   };
 
   const connectedCount = computeConnectedNodeIds(controlledNodeIds).size;
@@ -786,6 +876,7 @@ const tick = (state: GameState) => {
     resources: addResources(state.resources, delta),
     attention: clamp(state.attention + getPerSecondAttentionDelta(state), 0, 100),
     nodeHeatById: applyPassiveHeat(state),
+    frontlinePressure: applyFrontlineDrift(state),
   };
 
   return maybeTogglePhase(nextState);
@@ -807,6 +898,12 @@ export const getAttentionBand = (attention: number) => {
 };
 
 export const getNodeById = (nodeId: string) => nodeMap[nodeId];
+
+export const frontlineLabels: Record<FrontlineKey, string> = {
+  human: '人类前线',
+  dogs: '狗群前线',
+  rivalCats: 'rival 猫群',
+};
 
 export const getControlledNodeSet = (state: GameState) =>
   new Set(state.controlledNodeIds);
@@ -875,6 +972,22 @@ export const getHottestNodeId = (state: GameState) => {
   }
 
   return candidates.sort((a, b) => (state.nodeHeatById[b] ?? 0) - (state.nodeHeatById[a] ?? 0))[0];
+};
+
+export const getFrontlineSummary = (state: GameState) => {
+  const entries = (Object.entries(state.frontlinePressure) as [FrontlineKey, number][])
+    .sort((a, b) => b[1] - a[1]);
+  const [topKey, topValue] = entries[0];
+
+  return {
+    topKey,
+    topValue: Math.round(topValue),
+    entries: entries.map(([key, value]) => ({
+      key,
+      label: frontlineLabels[key],
+      value: Math.round(value),
+    })),
+  };
 };
 
 export const getPreviewDawn = (state: GameState) => {
@@ -1021,6 +1134,11 @@ export const createInitialState = (
     paused: false,
     openingScavengeClicks: 0,
     nodeHeatById: getInitialNodeHeat(),
+    frontlinePressure: {
+      human: 18,
+      dogs: 24,
+      rivalCats: 20,
+    },
   };
 
   return initialState;
