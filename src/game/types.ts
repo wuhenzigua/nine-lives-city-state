@@ -23,7 +23,11 @@ export type BuildingKey =
   | 'hideout'
   | 'scentMarker'
   | 'observationPost'
-  | 'moonPlatform';
+  | 'moonPlatform'
+  | 'granaryVault'
+  | 'relayBeacon'
+  | 'watchShrine'
+  | 'incenseTower';
 
 export type InstinctKey =
   | 'kinship'
@@ -58,6 +62,7 @@ export type BuildingConfig = {
   description: string;
   buildRule: BuildRule;
   unique: 'global' | 'perNode';
+  eraUnlock?: 'technology' | 'theology';
 };
 
 export type NodeConfig = {

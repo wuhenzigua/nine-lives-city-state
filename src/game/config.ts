@@ -158,6 +158,42 @@ export const buildings: BuildingConfig[] = [
     buildRule: 'subway',
     unique: 'global',
   },
+  {
+    id: 'granaryVault',
+    name: '蓄粮地窖',
+    cost: { scraps: 16, trust: 6, tech: 4 },
+    description: '科技时代建筑。黎明猫口消耗残羹 -2（全局唯一）。',
+    buildRule: 'mainNest',
+    unique: 'global',
+    eraUnlock: 'technology',
+  },
+  {
+    id: 'relayBeacon',
+    name: '中继信标',
+    cost: { scraps: 10, intel: 6, tech: 3 },
+    description: '科技时代建筑。相邻节点扩张失败率进一步下降。',
+    buildRule: 'controlledNonMain',
+    unique: 'perNode',
+    eraUnlock: 'technology',
+  },
+  {
+    id: 'watchShrine',
+    name: '守望祷所',
+    cost: { trust: 10, faith: 6, scent: 6 },
+    description: '神学时代建筑。降低黎明巡查触发概率（可叠加）。',
+    buildRule: 'controlledNonMain',
+    unique: 'perNode',
+    eraUnlock: 'theology',
+  },
+  {
+    id: 'incenseTower',
+    name: '香火高塔',
+    cost: { scraps: 12, faith: 8, legend: 3 },
+    description: '神学时代建筑。减缓外部前线压力漂移（可叠加）。',
+    buildRule: 'controlledNonMain',
+    unique: 'perNode',
+    eraUnlock: 'theology',
+  },
 ];
 
 export const instincts: InstinctConfig[] = [

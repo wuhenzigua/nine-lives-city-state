@@ -144,6 +144,7 @@ const applyFrontlineDrift = (state: GameState) => {
   const moonLedgerMitigation = hasDestiny(state, 'moonChaser')
     ? 0.04 + state.metaUpgradeLevels.moonLedger * 0.02
     : 0;
+  const incenseMitigation = Math.min(0.24, countBuilding(state, 'incenseTower') * 0.05);
 
   next.human = clamp(
     next.human + (state.attention >= 65 ? 0.2 : -0.1) + heatPeak * 0.002,
@@ -161,9 +162,10 @@ const applyFrontlineDrift = (state: GameState) => {
     FRONTLINE_MAX,
   );
 
-  next.human = clamp(next.human * mapPressure - moonLedgerMitigation, 0, FRONTLINE_MAX);
-  next.dogs = clamp(next.dogs * mapPressure - moonLedgerMitigation, 0, FRONTLINE_MAX);
-  next.rivalCats = clamp(next.rivalCats * mapPressure - moonLedgerMitigation, 0, FRONTLINE_MAX);
+  const totalMitigation = moonLedgerMitigation + incenseMitigation;
+  next.human = clamp(next.human * mapPressure - totalMitigation, 0, FRONTLINE_MAX);
+  next.dogs = clamp(next.dogs * mapPressure - totalMitigation, 0, FRONTLINE_MAX);
+  next.rivalCats = clamp(next.rivalCats * mapPressure - totalMitigation, 0, FRONTLINE_MAX);
 
   return next;
 };
@@ -208,6 +210,12 @@ const hasBuilding = (
 
 const hasGlobalBuilding = (state: GameState, buildingId: BuildingKey) =>
   Object.values(state.buildingsByNode).some((list) => list.includes(buildingId));
+
+const countBuilding = (state: GameState, buildingId: BuildingKey) =>
+  Object.values(state.buildingsByNode).reduce(
+    (sum, list) => sum + list.filter((id) => id === buildingId).length,
+    0,
+  );
 
 const sumAssignments = (assignments: GameState['assignments']) =>
   Object.values(assignments).reduce((sum, value) => sum + value, 0);
@@ -295,6 +303,11 @@ const currentObservationNodes = (state: GameState) =>
     .filter(([, list]) => list.includes('observationPost'))
     .map(([nodeId]) => nodeId);
 
+const currentRelayBeaconNodes = (state: GameState) =>
+  Object.entries(state.buildingsByNode)
+    .filter(([, list]) => list.includes('relayBeacon'))
+    .map(([nodeId]) => nodeId);
+
 const getAdjacentObservationBonus = (state: GameState, nodeId: string) => {
   const observationNodes = currentObservationNodes(state);
 
@@ -302,6 +315,15 @@ const getAdjacentObservationBonus = (state: GameState, nodeId: string) => {
     nodeMap[sourceNodeId].neighbors.includes(nodeId),
   )
     ? 0.1
+    : 0;
+};
+
+const getAdjacentRelayBonus = (state: GameState, nodeId: string) => {
+  const relayNodes = currentRelayBeaconNodes(state);
+  return relayNodes.some((sourceNodeId) =>
+    nodeMap[sourceNodeId].neighbors.includes(nodeId),
+  )
+    ? 0.08
     : 0;
 };
 
@@ -506,7 +528,8 @@ const resolveDawn = (state: GameState) => {
 
   decayHeat(nodeHeatById, 8);
 
-  const foodCost = totalCats * 3;
+  const granaryDiscount = hasGlobalBuilding(state, 'granaryVault') ? 2 : 0;
+  const foodCost = Math.max(0, totalCats * 3 - granaryDiscount);
   const baseMaintenance = controlledNodeIds
     .filter((nodeId) => nodeId !== MAIN_NEST_ID)
     .reduce(
@@ -558,11 +581,12 @@ const resolveDawn = (state: GameState) => {
     notes.push(`存在游离节点：${floatingNodes.map((id) => nodeMap[id].name).join('、')}。`);
   }
 
+  const shrineMitigation = Math.min(0.15, countBuilding(state, 'watchShrine') * 0.03);
   const patrolChance =
     attention >= 100
       ? 1
       : attention >= 70
-        ? 0.35 + (attention - 70) * 0.015 - (isTheologyEra(state) ? 0.06 : 0)
+        ? 0.35 + (attention - 70) * 0.015 - (isTheologyEra(state) ? 0.06 : 0) - shrineMitigation
         : 0;
   const patrolTriggered = Math.random() < patrolChance;
 
@@ -826,6 +850,7 @@ const expandNode = (state: GameState, nodeId: string) => {
   failureChance -= state.assignments.scout * (state.phase === 'night' ? 0.07 : 0.04);
   failureChance -= Math.min(state.resources.intel, 14) * 0.01;
   failureChance -= getAdjacentObservationBonus(state, nodeId);
+  failureChance -= getAdjacentRelayBonus(state, nodeId);
 
   if (hasDestiny(state, 'kinship') && state.phase === 'day') {
     failureChance -= 0.04;
@@ -903,6 +928,7 @@ const canBuildAtNode = (
   buildingId: BuildingKey,
 ) => {
   const building = buildingMap[buildingId];
+  const era = getEra(state);
 
   if (!building) {
     return false;
@@ -917,6 +943,16 @@ const canBuildAtNode = (
   }
 
   if (building.unique === 'global' && hasGlobalBuilding(state, buildingId)) {
+    return false;
+  }
+
+  if (building.eraUnlock === 'technology' && era === 'survival') {
+    return false;
+  }
+  if (
+    building.eraUnlock === 'theology' &&
+    !(era === 'theology' || era === 'ascension')
+  ) {
     return false;
   }
 
@@ -1384,11 +1420,14 @@ export const getPreviewDawn = (state: GameState) => {
       (hasDestiny(state, 'scentWeaver') ? 1 : 0),
   );
   const patrolChance =
-    state.attention >= 100
-      ? 1
-      : state.attention >= 70
-        ? 0.35 + (state.attention - 70) * 0.015 - (isTheologyEra(state) ? 0.06 : 0)
-        : 0;
+    (() => {
+      const shrineMitigation = Math.min(0.15, countBuilding(state, 'watchShrine') * 0.03);
+      return state.attention >= 100
+        ? 1
+        : state.attention >= 70
+          ? 0.35 + (state.attention - 70) * 0.015 - (isTheologyEra(state) ? 0.06 : 0) - shrineMitigation
+          : 0;
+    })();
 
   return {
     foodCost,
